@@ -19,7 +19,7 @@ UINT    enable_xlate    = 1;  /* default to 1 */
 //     0:  1:1 mapping
 //     1:  1:N mapping
 //
-UINT    xlate_mode      = 1;  /* default to 1 */
+UINT    xlate_mode      = 0;  /* default to 1 */
 
 
 //
@@ -27,19 +27,19 @@ UINT    xlate_mode      = 1;  /* default to 1 */
 //
 INT char_array_equal(PUCHAR array1, PUCHAR array2, INT len)
 {
-	INT i;
-	INT ret = 1; // Set to true at first
+    INT i;
+    INT ret = 1; // Set to true at first
 
-	for (i = 0; i < len; i++)
+    for (i = 0; i < len; i++)
     {
-		if (array1[i] != array2[i])
+        if (array1[i] != array2[i])
         {
             // Any differences will result a false return
-			ret = 0;
+            ret = 0;
             break;
         }
-	}
-	return ret;
+    }
+    return ret;
 }
 
 //
@@ -156,17 +156,17 @@ VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr)
 //
 VOID ip6to4(IP6_HEADER *ip6h, IP_HEADER *ih)
 {
-	// ih must be memset to zero before calling this function!
-	ih->ver_ihl = 0x45;
-	ih->length = htons(ntohs(ip6h->payload) + 20);
-	ih->ttl = ip6h->hoplimit;
-	ih->protocol = ip6h->nexthdr;
+    // ih must be memset to zero before calling this function!
+    ih->ver_ihl = 0x45;
+    ih->length = htons(ntohs(ip6h->payload) + 20);
+    ih->ttl = ip6h->hoplimit;
+    ih->protocol = ip6h->nexthdr;
 
-	// IVI address mapping
-	ip_addr6to4(ip6h->saddr, ih->saddr);
-	ip_addr6to4(ip6h->daddr, ih->daddr);
+    // IVI address mapping
+    ip_addr6to4(ip6h->saddr, ih->saddr);
+    ip_addr6to4(ip6h->daddr, ih->daddr);
 
-	return;
+    return;
 }
 
 
@@ -180,8 +180,8 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     IP_HEADER    *ih;
     TCP_HEADER   *th;
     ETH_HEADER   *eh_6;
-	IP6_HEADER   *ip6h;
-	TCP_HEADER   *th_6;
+    IP6_HEADER   *ip6h;
+    TCP_HEADER   *th_6;
     INT           size;
     USHORT        newport;
     UINT          packet_size = 0; // bytes need to be sent
@@ -191,8 +191,8 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     ih     = (IP_HEADER  *)(pPacket + sizeof(ETH_HEADER));
     th     = (TCP_HEADER *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
     eh_6   = (ETH_HEADER *)(pNewPacket);
-	ip6h   = (IP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER));
-	th_6   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ip6h   = (IP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER));
+    th_6   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
@@ -200,14 +200,14 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-	ip4to6(ih, ip6h);
+    ip4to6(ih, ip6h);
     
     // Copy TCP header & data
-	size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
-	NdisMoveMemory(th_6, th, size);
+    size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
+    NdisMoveMemory(th_6, th, size);
     
     // Port mapping
-    newport = get_out_map_port(ntohs(th->sport), 1);
+    newport = GetTcpPortMapOut(th, size, TRUE);
     if (newport == 0)
     {
         DBGPRINT(("==> tcp4to6: find map failed.\n"));
@@ -217,10 +217,10 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     
     checksum_tcp6(ip6h, th_6);
 
-	// Done
-	
-	// Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
+    // Done
+    
+    // Set packet_size
+    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
     
     return packet_size;
 }
@@ -235,8 +235,8 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     IP6_HEADER   *ip6h;
     TCP_HEADER   *th;
     ETH_HEADER   *eh_4;
-	IP_HEADER    *ih;
-	TCP_HEADER   *th_4;
+    IP_HEADER    *ih;
+    TCP_HEADER   *th_4;
     INT           size;
     USHORT        oldport;
     UINT          packet_size = 0; // bytes need to be sent
@@ -246,8 +246,8 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     ip6h   = (IP6_HEADER *)(pPacket + sizeof(ETH_HEADER));
     th     = (TCP_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     eh_4   = (ETH_HEADER *)(pNewPacket);
-	ih     = (IP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
-	th_4   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    ih     = (IP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
+    th_4   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -255,14 +255,14 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-	ip6to4(ip6h, ih);
+    ip6to4(ip6h, ih);
     
     // Copy TCP header & data
     size = ntohs(ip6h->payload);
     NdisMoveMemory(th_4, th, size);
     
     // Port mapping
-    oldport = get_in_map_port(ntohs(th->dport));
+    oldport = GetTcpPortMapIn(th, size);
     if (oldport == 0)
     {
         DBGPRINT(("==> tcp6to4: find map failed.\n"));
@@ -272,11 +272,11 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     
     checksum_tcp4(ih, th_4);
 
-	// Done
+    // Done
     
     // Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-	
+    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
+    
     return packet_size;
 }
 
@@ -289,9 +289,9 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     ETH_HEADER   *eh;
     IP_HEADER    *ih;
     ICMP_HEADER  *icmph;
-	ETH_HEADER   *eh_6;
-	IP6_HEADER   *ip6h;
-	ICMP6_HEADER *icmp6h;
+    ETH_HEADER   *eh_6;
+    IP6_HEADER   *ip6h;
+    ICMP6_HEADER *icmp6h;
     
     PUCHAR        data;
     PUCHAR        data_new;
@@ -305,8 +305,8 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     ih     = (IP_HEADER    *)(pPacket + sizeof(ETH_HEADER));
     icmph  = (ICMP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
     eh_6   = (ETH_HEADER   *)(pNewPacket);
-	ip6h   = (IP6_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
-	icmp6h = (ICMP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ip6h   = (IP6_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
+    icmp6h = (ICMP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
@@ -344,7 +344,7 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     // Done
     
     // Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
+    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
     
     return packet_size;
 }
@@ -359,8 +359,8 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     IP6_HEADER   *ip6h;
     ICMP6_HEADER *icmp6h;
     ETH_HEADER   *eh_4;
-	IP_HEADER    *ih;
-	ICMP_HEADER  *icmph;
+    IP_HEADER    *ih;
+    ICMP_HEADER  *icmph;
     
     PUCHAR        data;
     PUCHAR        data_new;
@@ -374,8 +374,8 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     ip6h   = (IP6_HEADER   *)(pPacket + sizeof(ETH_HEADER));
     icmp6h = (ICMP6_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     eh_4   = (ETH_HEADER   *)(pNewPacket);
-	ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
-	icmph  = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
+    icmph  = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -413,7 +413,7 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     // Done
     
     // Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
+    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
     
     return packet_size;
 }
@@ -432,12 +432,12 @@ UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket)
     UDP_HEADER   *embed_uh;
     TCP_HEADER   *embed_th;
     ETH_HEADER   *eh_4;
-	IP_HEADER    *ih;
-	ICMP_HEADER  *icmph;
-	IP_HEADER    *embed_ih;
-	ICMP_HEADER  *embed_icmph;
-	UDP_HEADER   *embed_uh_4;
-	TCP_HEADER   *embed_th_4;
+    IP_HEADER    *ih;
+    ICMP_HEADER  *icmph;
+    IP_HEADER    *embed_ih;
+    ICMP_HEADER  *embed_icmph;
+    UDP_HEADER   *embed_uh_4;
+    TCP_HEADER   *embed_th_4;
     
     PUCHAR        data;
     PUCHAR        data_new;
@@ -454,9 +454,9 @@ UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket)
     icmp6h       = (ICMP6_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     embed_ip6h   = (IP6_HEADER   *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER));
     eh_4         = (ETH_HEADER   *)(pNewPacket);
-	ih           = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
-	icmph        = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
-	embed_ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER));
+    ih           = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
+    icmph        = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    embed_ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -473,35 +473,35 @@ UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket)
         case ICMP6_TIME_EXCEED:
             icmph->type = ICMP_TIME_EXCEEDED;
             icmph->code = icmp6h->code;
-			break;
-		case ICMP6_DEST_UNREACH:
-			icmph->type = ICMP_DEST_UNREACH;
-			switch (icmp6h->code)
+            break;
+        case ICMP6_DEST_UNREACH:
+            icmph->type = ICMP_DEST_UNREACH;
+            switch (icmp6h->code)
             {
-				case ICMP6_NOROUTE:
-					icmph->code = ICMP_NET_UNREACH;
-					break;
-				case ICMP6_PORT_UNREACH:
-					icmph->code = ICMP_PORT_UNREACH;
-					break;
-				case ICMP6_ADM_PROHIBITED:
-					icmph->code = ICMP_PKT_FILTERED;
-					break;
-				case ICMP6_ADDR_UNREACH:
-				default:
-					icmph->code = ICMP_HOST_UNREACH;
-					break;
-			}
-			break;
-		case ICMP6_PKT_TOOBIG:
-			icmph->type = ICMP_DEST_UNREACH;
-			icmph->code = ICMP_FRAG_NEEDED;
-			// Change MTU
-			icmph->sequence = htons(ntohs(icmp6h->sequence) - 28);
-		default:
-		    DBGPRINT(("==> icmp6to4_embed: unsupported icmpv6 type. Drop.\n"));
-			return 0;
-	}
+                case ICMP6_NOROUTE:
+                    icmph->code = ICMP_NET_UNREACH;
+                    break;
+                case ICMP6_PORT_UNREACH:
+                    icmph->code = ICMP_PORT_UNREACH;
+                    break;
+                case ICMP6_ADM_PROHIBITED:
+                    icmph->code = ICMP_PKT_FILTERED;
+                    break;
+                case ICMP6_ADDR_UNREACH:
+                default:
+                    icmph->code = ICMP_HOST_UNREACH;
+                    break;
+            }
+            break;
+        case ICMP6_PKT_TOOBIG:
+            icmph->type = ICMP_DEST_UNREACH;
+            icmph->code = ICMP_FRAG_NEEDED;
+            // Change MTU
+            icmph->sequence = htons(ntohs(icmp6h->sequence) - 28);
+        default:
+            DBGPRINT(("==> icmp6to4_embed: unsupported icmpv6 type. Drop.\n"));
+            return 0;
+    }
     icmph->checksum = 0;
     
     // Translate embedded IPv6 packet
@@ -597,7 +597,7 @@ UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket)
     // Done
     
     // Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ih->length);
+    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length);
     
     return packet_size;
 }
@@ -612,8 +612,8 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     IP_HEADER    *ih;
     UDP_HEADER   *uh;
     ETH_HEADER   *eh_6;
-	IP6_HEADER   *ip6h;
-	UDP_HEADER   *uh_6;
+    IP6_HEADER   *ip6h;
+    UDP_HEADER   *uh_6;
     
     INT           size;
     USHORT        newport;
@@ -624,8 +624,8 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     ih     = (IP_HEADER   *)(pPacket + sizeof(ETH_HEADER));
     uh     = (UDP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
     eh_6   = (ETH_HEADER  *)(pNewPacket);
-	ip6h   = (IP6_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
-	uh_6   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ip6h   = (IP6_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
+    uh_6   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
@@ -633,11 +633,11 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-	ip4to6(ih, ip6h);
+    ip4to6(ih, ip6h);
     
     // Copy TCP header & data
-	size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
-	NdisMoveMemory(uh_6, uh, size);
+    size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
+    NdisMoveMemory(uh_6, uh, size);
     
     // Port mapping
     newport = get_out_map_port(ntohs(uh->sport), 1);
@@ -650,10 +650,10 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     
     checksum_udp6(ip6h, uh_6);
 
-	// Done
-	
-	// Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
+    // Done
+    
+    // Set packet_size
+    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
     
     return packet_size;
 }
@@ -668,8 +668,8 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     IP6_HEADER   *ip6h;
     UDP_HEADER   *uh;
     ETH_HEADER   *eh_4;
-	IP_HEADER    *ih;
-	UDP_HEADER   *uh_4;
+    IP_HEADER    *ih;
+    UDP_HEADER   *uh_4;
     
     INT           size;
     USHORT        oldport;
@@ -680,8 +680,8 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     ip6h   = (IP6_HEADER  *)(pPacket + sizeof(ETH_HEADER));
     uh     = (UDP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     eh_4   = (ETH_HEADER  *)(pNewPacket);
-	ih     = (IP_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
-	uh_4   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    ih     = (IP_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
+    uh_4   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -689,7 +689,7 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-	ip6to4(ip6h, ih);
+    ip6to4(ip6h, ih);
     
     // Copy UDP header & data
     size = ntohs(ip6h->payload);
@@ -706,11 +706,11 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     
     checksum_udp4(ih, uh_4);
 
-	// Done
+    // Done
     
     // Set packet_size
-	packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-	
+    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
+    
     return packet_size;
 }
 

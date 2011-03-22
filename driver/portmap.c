@@ -9,7 +9,7 @@
 //
 INT is_time_out(PLARGE_INTEGER newtime, PLARGE_INTEGER oldtime)
 {   
-    if (newtime->QuadPart - oldtime->QuadPart >= TimeOut.QuadPart)
+    if (newtime->QuadPart - oldtime->QuadPart >= UdpTimeOut.QuadPart)
         return 1;
     else
         return 0;
@@ -54,37 +54,36 @@ VOID refresh_port_list()
 //
 USHORT get_out_map_port(USHORT oldp, USHORT translate)
 {
-	USHORT    ret;
-	SHORT     remaining;
-	USHORT    MaxPorts;
+    USHORT    ret = 0;
+    SHORT     remaining;
+    USHORT    MaxPorts;
     
     USHORT    rover;
     USHORT    low;
     USHORT    high;
-	
-	MaxPorts = 65536 / mod;
-	
-    refresh_port_list();
     
-	if (port_used >= MaxPorts)
-    {
-		DBGPRINT(("==> get_out_map_port: list full. Map port is used up.\n"));
-		return 0;
-	}
+    MaxPorts = 65536 / mod;
+    
+    refresh_port_list();
 
-	ret = 0;
-	NdisAcquireSpinLock(&PortListLock);
-	if (port4to6_list[oldp].valid != 0)  // find existing map
+    NdisAcquireSpinLock(&PortListLock);
+    if (port4to6_list[oldp].valid != 0)  // find existing map
     {
         ret = port4to6_list[oldp].port_6;
         port6to4_list[ret].trans = translate;  // override previous trans type
         NdisGetCurrentSystemTime(&(port_timer_list[oldp])); // refresh timer
         DBGPRINT(("==> get_out_map_port: Find Map %d -> %d, xlate flag is %d\n", oldp, ret, translate ));
     }
-    //NdisReleaseSpinLock(&PortListLock);
-	
-	if (ret == 0) // no existing map, generate new map
+    
+    if (ret == 0) // no existing map, generate new map
     {
+        if (port_used >= MaxPorts)
+        {
+            DBGPRINT(("==> get_out_map_port: list full. Map port is used up.\n"));
+            NdisReleaseSpinLock(&PortListLock);
+            return 0;
+        }
+        
         if (xlate_mode)  // 1:N port mapping
         {
             low = (USHORT)(1024 / mod) + 1;
@@ -122,7 +121,6 @@ USHORT get_out_map_port(USHORT oldp, USHORT translate)
         }
         
         // Routine to add new map-info
-        //NdisAcquireSpinLock(&PortListLock);
         port4to6_list[oldp].port_6 = ret;
         port4to6_list[oldp].valid = 1;
         port6to4_list[ret].port_4 = oldp;
@@ -130,13 +128,12 @@ USHORT get_out_map_port(USHORT oldp, USHORT translate)
         NdisGetCurrentSystemTime(&(port_timer_list[oldp]));
         port_used++;
         port_start = ret;
-        //NdisReleaseSpinLock(&PortListLock);
-        DBGPRINT(("==> get_out_map_port: New Map %d -> %d added, xlate flag is %d\n", oldp, ret, translate ));
+        DBGPRINT(("==> get_out_map_port: New Map %d -> %d added, xlate flag is %d\n", oldp, ret, translate));
     }
     
     NdisReleaseSpinLock(&PortListLock);
     
-	return ret;
+    return ret;
 }
 
 //
@@ -144,24 +141,19 @@ USHORT get_out_map_port(USHORT oldp, USHORT translate)
 //
 USHORT get_in_map_port(USHORT newp)
 {
-	USHORT ret;
-	USHORT xlate;
-	
-	refresh_port_list();
-	
-	if (port_used == 0) // no map-info
-		return 0;
-	
-	ret = 0;
-	xlate = 0;
-	NdisAcquireSpinLock(&PortListLock);
-	ret = port6to4_list[newp].port_4;
-	if (port4to6_list[ret].valid != 0) // find existing map
+    USHORT ret = 0;
+    
+    refresh_port_list();
+    
+    if (port_used == 0) // no map-info
+        return 0;
+    
+    NdisAcquireSpinLock(&PortListLock);
+    ret = port6to4_list[newp].port_4;
+    if (port4to6_list[ret].valid != 0) // find existing map
     {
-        //ret = port6to4_list[newp].port_4;
-        xlate = port6to4_list[newp].trans;
         NdisGetCurrentSystemTime(&(port_timer_list[ret]));
-        DBGPRINT(("==> get_in_map_port: Find Map %d -> %d, xlate flag is %d\n", ret, newp, xlate ));
+        DBGPRINT(("==> get_in_map_port: Find Map %d -> %d, xlate flag is %d\n", ret, newp, port6to4_list[newp].trans));
     }
     else
     {
@@ -211,38 +203,37 @@ VOID refresh_id_list()
 //
 INT get_out_map_id(IN USHORT old_id, IN USHORT translate, OUT PUSHORT new_id)
 {
-	USHORT    ret;
-	SHORT     remaining;
-	USHORT    MaxIds;
+    USHORT    ret = 0;
+    SHORT     remaining;
+    USHORT    MaxIds;
     
     USHORT    rover;
     USHORT    low;
     USHORT    high;
-	
-	MaxIds = (USHORT)( 65536 / mod );
-	
-    refresh_id_list();
     
-	if( id_used >= MaxIds )
-    {
-		DBGPRINT(("==> get_out_map_id: list full. Map id is used up.\n"));
-		*new_id = 0;
-		return -1;
-	}
+    MaxIds = (USHORT)( 65536 / mod );
+    
+    refresh_id_list();
 
-	ret = 0;
-	NdisAcquireSpinLock(&IdListLock);
-	if (icmp_id4to6_list[old_id].valid != 0)  // find existing map
+    NdisAcquireSpinLock(&IdListLock);
+    if (icmp_id4to6_list[old_id].valid != 0)  // find existing map
     {
         ret = icmp_id4to6_list[old_id].id_6;
         NdisGetCurrentSystemTime(&(icmp_timer_list[old_id])); // refresh timer
         DBGPRINT(("==> get_out_map_id: Find Map %d -> %d\n", old_id, ret));
         *new_id = ret;
     }
-    //NdisReleaseSpinLock(&IdListLock);
-	
-	if (ret == 0) // no existing map, generate new map
+    
+    if (ret == 0) // no existing map, generate new map
     {
+        if (id_used >= MaxIds)
+        {
+            DBGPRINT(("==> get_out_map_id: list full. Map id is used up.\n"));
+            *new_id = 0;
+            NdisReleaseSpinLock(&IdListLock);
+            return -1;
+        }
+        
         if (xlate_mode)   // 1:N id mapping
         {
             low = (USHORT)(1024 / mod) + 1;
@@ -281,7 +272,6 @@ INT get_out_map_id(IN USHORT old_id, IN USHORT translate, OUT PUSHORT new_id)
         }
         
         // Routine to add new map-info
-        //NdisAcquireSpinLock(&IdListLock);
         icmp_id4to6_list[old_id].id_6 = ret;
         icmp_id4to6_list[old_id].valid = 1;
         icmp_id6to4_list[ret].id_4 = old_id;
@@ -289,14 +279,13 @@ INT get_out_map_id(IN USHORT old_id, IN USHORT translate, OUT PUSHORT new_id)
         NdisGetCurrentSystemTime(&(icmp_timer_list[old_id]));
         id_used++;
         id_start = ret;
-        //NdisReleaseSpinLock(&IdListLock);
         DBGPRINT(("==> get_out_map_id: New Map %d -> %d added.\n", old_id, ret ));
         *new_id = ret;
     }
     
     NdisReleaseSpinLock(&IdListLock);
     
-	return 0;
+    return 0;
 }
 
 //
@@ -304,19 +293,19 @@ INT get_out_map_id(IN USHORT old_id, IN USHORT translate, OUT PUSHORT new_id)
 //
 INT get_in_map_id(IN USHORT new_id, OUT PUSHORT old_id)
 {
-	USHORT  ret;
-	INT     flag;
-	
-	refresh_id_list();
-	
-	if (id_used == 0) // no map-info
-		return -1;
-	
-	ret = 0;
-	flag = 0;
-	NdisAcquireSpinLock(&IdListLock);
-	ret = icmp_id6to4_list[new_id].id_4;
-	if (icmp_id4to6_list[ret].valid != 0) // find existing map
+    USHORT  ret;
+    INT     flag;
+    
+    refresh_id_list();
+    
+    if (id_used == 0) // no map-info
+        return -1;
+    
+    ret = 0;
+    flag = 0;
+    NdisAcquireSpinLock(&IdListLock);
+    ret = icmp_id6to4_list[new_id].id_4;
+    if (icmp_id4to6_list[ret].valid != 0) // find existing map
     {
         //ret = icmp_id6to4_list[new_id].id_4;
         NdisGetCurrentSystemTime(&(icmp_timer_list[ret]));

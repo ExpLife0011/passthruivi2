@@ -17,15 +17,15 @@ USHORT checksum_adjust(USHORT chksum, USHORT oldp, USHORT newp)
     x -= oldp & 0xffff;
     if (x <= 0)
     {
-	    x--;
-	    x &= 0xffff;
+        x--;
+        x &= 0xffff;
     }
 
     x += newp & 0xffff;
     if (x & 0x10000)
     {
-	    x++;
-	    x &= 0xffff;
+        x++;
+        x &= 0xffff;
     }
 
     x = ~x & 0xffff;
@@ -62,21 +62,21 @@ ULONG checksum_unfold(PUSHORT buffer, INT size)
 VOID checksum_tcp4(IP_HEADER *ih, TCP_HEADER *th)
 {
     USHORT checksum;
-	// USHORT checksum0;
+    // USHORT checksum0;
     ULONG  w1, w2, w3;
     USHORT size;
     PSD_HEADER psdh;
     
     NdisZeroMemory(&psdh, sizeof(PSD_HEADER));
     NdisMoveMemory(psdh.saddr, ih->saddr, 4);
-	NdisMoveMemory(psdh.daddr, ih->daddr, 4);
+    NdisMoveMemory(psdh.daddr, ih->daddr, 4);
     
     psdh.protocol = ih->protocol;
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
     psdh.length = htons(size);
     
     checksum = th->checksum;
-	//DBGPRINT(("==> checksum_tcp4: Old TCP checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_tcp4: Old TCP checksum: %02x\n", checksum));
     th->checksum = 0;
     
     // Compute psuedo-header and tcp data seperately
@@ -116,14 +116,14 @@ VOID checksum_tcp4(IP_HEADER *ih, TCP_HEADER *th)
 VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh)
 {
     USHORT checksum;
-	//USHORT checksum0;
+    //USHORT checksum0;
     ULONG  w1, w2, w3;
     USHORT size;
     PSD_HEADER psdh;
     
     NdisZeroMemory(&psdh, sizeof(PSD_HEADER));
     NdisMoveMemory(psdh.saddr, ih->saddr, 4);
-	NdisMoveMemory(psdh.daddr, ih->daddr, 4);
+    NdisMoveMemory(psdh.daddr, ih->daddr, 4);
     
     psdh.protocol = ih->protocol;
     psdh.length = uh->length;
@@ -172,17 +172,17 @@ VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh)
 VOID checksum_icmp4(IP_HEADER *ih, ICMP_HEADER *icmph)
 {
     //USHORT   checksum;
-	//USHORT	checksum0;
+    //USHORT    checksum0;
     ULONG  w1;
     USHORT size;
 
-	// Compute icmp checksum
+    // Compute icmp checksum
 
     //checksum = icmph->checksum;
-	//DBGPRINT(("checksum_icmp4: Old ICMP checksum: %02x\n", checksum));
-	size = ntohs(ih->length) - (ih->ver_ihl & 0x0F) * 4;
+    //DBGPRINT(("checksum_icmp4: Old ICMP checksum: %02x\n", checksum));
+    size = ntohs(ih->length) - (ih->ver_ihl & 0x0F) * 4;
     
-	icmph->checksum = 0;
+    icmph->checksum = 0;
     w1 = checksum_unfold((PUSHORT)icmph, size);
     while (w1 >> 16)
     {
@@ -191,7 +191,7 @@ VOID checksum_icmp4(IP_HEADER *ih, ICMP_HEADER *icmph)
     //checksum = (USHORT)(~w1);
     //DBGPRINT(("checksum_icmp4: Recompute ICMP checksum: %02x\n", checksum));
     //icmph->checksum = checksum;
-	icmph->checksum = (USHORT)(~w1);
+    icmph->checksum = (USHORT)(~w1);
     
     // Compute ip header checksum
 
@@ -219,7 +219,7 @@ VOID checksum_icmp4(IP_HEADER *ih, ICMP_HEADER *icmph)
 VOID checksum_tcp6(IP6_HEADER *ip6h, TCP_HEADER *th)
 {
     USHORT checksum;
-	// USHORT checksum0;
+    // USHORT checksum0;
     ULONG  w1, w2, w3;
     USHORT size;
     PSD6_HEADER psd6h;
@@ -233,7 +233,7 @@ VOID checksum_tcp6(IP6_HEADER *ip6h, TCP_HEADER *th)
     
     size = ntohs(ip6h->payload);
     checksum = th->checksum;
-	//DBGPRINT(("==> checksum_tcp6: Old TCP checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_tcp6: Old TCP checksum: %02x\n", checksum));
     th->checksum = 0;
     
     // Compute psuedo-header and tcp data seperately
@@ -260,7 +260,7 @@ VOID checksum_tcp6(IP6_HEADER *ip6h, TCP_HEADER *th)
 VOID checksum_udp6(IP6_HEADER *ip6h, UDP_HEADER *uh)
 {
     USHORT checksum;
-	// USHORT checksum0;
+    // USHORT checksum0;
     ULONG  w1, w2, w3;
     USHORT size;
     PSD6_HEADER psd6h;
@@ -274,7 +274,7 @@ VOID checksum_udp6(IP6_HEADER *ip6h, UDP_HEADER *uh)
     
     size = ntohs(ip6h->payload);
     checksum = uh->checksum;
-	DBGPRINT(("==> checksum_udp6: Old UDP checksum: %02x\n", checksum));
+    DBGPRINT(("==> checksum_udp6: Old UDP checksum: %02x\n", checksum));
     uh->checksum = 0;
     
     // Compute psuedo-header and udp data seperately
@@ -301,7 +301,7 @@ VOID checksum_udp6(IP6_HEADER *ip6h, UDP_HEADER *uh)
 VOID checksum_icmp6(IP6_HEADER *ip6h, ICMP6_HEADER *icmp6h)
 {
     // USHORT checksum;
-	// USHORT checksum0;
+    // USHORT checksum0;
     ULONG  w1, w2, w3;
     USHORT size;
     PSD6_HEADER psd6h;
@@ -315,7 +315,7 @@ VOID checksum_icmp6(IP6_HEADER *ip6h, ICMP6_HEADER *icmp6h)
     
     size = ntohs(ip6h->payload);
     //checksum = icmp6h->checksum;
-	//DBGPRINT(("==> checksum_icmp6: Old ICMPv6 checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_icmp6: Old ICMPv6 checksum: %02x\n", checksum));
     icmp6h->checksum = 0;
     
     // Compute psuedo-header and icmpv6 data seperately

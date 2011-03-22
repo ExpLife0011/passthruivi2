@@ -157,30 +157,30 @@ Return Value:
             break;
             
         case IOCTL_PTUSERIO_SET_TIMEOUT:
-            if (inputBufferLength != sizeof(TimeOut))
+            if (inputBufferLength != sizeof(UdpTimeOut))
             {
                 DBGPRINT(("==> ioctl: SET_TIMEOUT input type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(&TimeOut, (PVOID)ioBuffer, inputBufferLength);
-                DBGPRINT(("==> ioctl: set TimeOut to : HighPart %ld  LowPart %ld\n", TimeOut.HighPart, TimeOut.LowPart));
+                NdisMoveMemory(&UdpTimeOut, (PVOID)ioBuffer, inputBufferLength);
+                DBGPRINT(("==> ioctl: set UdpTimeOut to : HighPart %ld  LowPart %ld\n", UdpTimeOut.HighPart, UdpTimeOut.LowPart));
             }
             break;
             
         case IOCTL_PTUSERIO_GET_TIMEOUT:
-            if (outputBufferLength != sizeof(TimeOut))
+            if (outputBufferLength != sizeof(UdpTimeOut))
             {
                 DBGPRINT(("==> ioctl: GET_TIMEOUT output type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(ioBuffer, &TimeOut, outputBufferLength);
-                //*((PUSHORT)ioBuffer) = TimeOut;
-                DBGPRINT(("==> ioctl: get TimeOut by user.\n"));
-                BytesReturned = sizeof(TimeOut);
+                NdisMoveMemory(ioBuffer, &UdpTimeOut, outputBufferLength);
+                //*((PUSHORT)ioBuffer) = UdpTimeOut;
+                DBGPRINT(("==> ioctl: get UdpTimeOut by user.\n"));
+                BytesReturned = sizeof(UdpTimeOut);
             }
             break;
         

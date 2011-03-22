@@ -3,7 +3,7 @@
 
 NDIS_SPIN_LOCK          PortListLock;
 NDIS_SPIN_LOCK          IdListLock;
-LARGE_INTEGER           TimeOut = { { 1640261632, 8 } };     // equals to 1 hour
+LARGE_INTEGER           UdpTimeOut = { 30 MINS };
 INT                     AutoConfig = 0;  /* Depricated */
 
 // Mapping lists
@@ -30,7 +30,7 @@ VOID init_icmp4to6_list()
 
 VOID init_icmp6to4_list()
 {
-	NdisZeroMemory(icmp_id6to4_list, 65536 * sizeof(icmp_id6to4));
+    NdisZeroMemory(icmp_id6to4_list, 65536 * sizeof(icmp_id6to4));
 }
 
 VOID init_icmp_timer_list()
@@ -40,12 +40,12 @@ VOID init_icmp_timer_list()
 
 VOID init_port4to6_list()
 {
-	NdisZeroMemory(port4to6_list, 65536 * sizeof(port4to6));
+    NdisZeroMemory(port4to6_list, 65536 * sizeof(port4to6));
 }
 
 VOID init_port6to4_list()
 {
-	NdisZeroMemory(port6to4_list, 65536 * sizeof(port6to4));
+    NdisZeroMemory(port6to4_list, 65536 * sizeof(port6to4));
 }
 
 VOID init_port_timer_list()
@@ -56,19 +56,22 @@ VOID init_port_timer_list()
 VOID reset_lists()
 {
     // zero lists memory
+    NdisAcquireSpinLock(&IdListLock);
     init_icmp4to6_list();
-	init_icmp6to4_list();
+    init_icmp6to4_list();
     init_icmp_timer_list();
-	init_port4to6_list();
-	init_port6to4_list();
-    init_port_timer_list();
-    
     // reset counter
     id_used = 0;
     id_start = 0;
+    NdisReleaseSpinLock(&IdListLock);
+    
+    NdisAcquireSpinLock(&PortListLock);
+    init_port4to6_list();
+    init_port6to4_list();
+    init_port_timer_list();
+    // reset counter
     port_used = 0;
     port_start = 0;
-    
-    return;
+    NdisReleaseSpinLock(&PortListLock);
 }
 

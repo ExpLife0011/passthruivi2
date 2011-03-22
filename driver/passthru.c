@@ -101,7 +101,11 @@ Return Value:
     
     reset_lists();
     
-    DBGPRINT(("==> Map list initialized!\n"));
+    // Init TCP state list
+    NdisAllocateSpinLock(&StateListLock);
+    InitTcpLists();
+    
+    DBGPRINT(("==> Map list initialized.\n"));
     // Done!
 
     NdisMInitializeWrapper(&NdisWrapperHandle, DriverObject, RegistryPath, NULL);
@@ -482,6 +486,9 @@ PtUnload(
     NdisIMDeregisterLayeredMiniport(DriverHandle);
     NdisFreeSpinLock(&GlobalLock);
     DBGPRINT(("PtUnload: done!\n"));
+    
+    ResetTcpLists();
+    NdisFreeSpinLock(&StateListLock);
     
     // Release list spin_locks
     NdisFreeSpinLock(&PortListLock);

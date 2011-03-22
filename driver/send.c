@@ -59,6 +59,7 @@ Return Value:
     INT              k;
     UCHAR            tempChar;
     LARGE_INTEGER    currentTime;
+    INT              size;
     
     //DBGPRINT(("==> MPSendPackets entered.\n"));
     
@@ -152,8 +153,8 @@ Return Value:
                 //DBGPRINT(("==> MPSendPackets: Get packet content success.\n"));
                 
                 // Set packet_size
-	            packet_size = PacketLength;
-	            
+                packet_size = PacketLength;
+                
                 eh = (ETH_HEADER *)(pPacketContent);
                 
                 if (eh->type == htons(ETH_IP)) 
@@ -423,10 +424,10 @@ Return Value:
                 else if (eh->type == htons(ETH_IP6))
                 {
                     // ipv6 packet
-                    DBGPRINT(("==> MPSendPackets: We send an IPv6 packet.\n"));
+                    //DBGPRINT(("==> MPSendPackets: We send an IPv6 packet.\n"));
                     ip6h = (IP6_HEADER *)(pPacketContent + sizeof(ETH_HEADER));
                     
-                    DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
+                    //DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
                     
                     if (is_ivi_address(ip6h->saddr) != 0)
                     {
@@ -439,8 +440,8 @@ Return Value:
                             
                             //DBGPRINT(("==> Old Source port: %d\n", ntohs(th->sport)));
                             //DBGPRINT(("==> Dest port: %d\n", ntohs(th->dport)));
-                            
-                            nport = get_out_map_port(ntohs(th->sport), 0);
+                            size = ntohs(ip6h->payload);
+                            nport = GetTcpPortMapOut(th, size, FALSE);
                             
                             if (nport == 0)
                             {

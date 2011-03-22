@@ -61,9 +61,12 @@ Return Value:
     TCP_HEADER       *th;
     UDP_HEADER       *uh;
     USHORT           nport = 0;
-    USHORT           is_translate;
+    USHORT           is_translate = 0;
     INT              ret = 0;
-    UINT             packet_size     = 0;   // bytes need to be sent in the buffer
+    UINT             packet_size = 0;   // bytes need to be sent in the buffer
+    
+    INT              size = 0;
+    PTCP_STATE_CONTEXT  StateContext;
 
     //DBGPRINT(("==> PtReceive called.\n"));
     
@@ -147,8 +150,8 @@ Return Value:
                 //DBGPRINT(("==> PtReceive: Get packet content success.\n"));
                 
                 // Set packet_size, replace i
-	            packet_size = PacketLength;
-	            
+                packet_size = PacketLength;
+                
                 eh = (ETH_HEADER *)(pPacketContent);
                 
                 if (eh->type == htons(ETH_IP6))
@@ -420,16 +423,21 @@ Return Value:
                             th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
                             // Check the mapping list
-                            NdisAcquireSpinLock(&PortListLock);
-                            is_translate = port6to4_list[ntohs(th->dport)].trans;
-                            NdisReleaseSpinLock(&PortListLock);
+                            NdisAcquireSpinLock(&StateListLock);
+                            StateContext = TcpPortMapInTable[ntohs(th->dport)].State;
+                            if (StateContext != NULL)
+                            {
+                                is_translate = StateContext->Translated;
+                            }
+                            NdisReleaseSpinLock(&StateListLock);
                             
                             if (is_translate != 1)
                             {
                                 DBGPRINT(("==> PtReceive: Non-translated TCPv6 port.\n"));
                                 //DBGPRINT(("==> Source port: %d\n", ntohs(th->sport)));
                                 //DBGPRINT(("==> Old Dest port: %d\n", ntohs(th->dport)));
-                                nport = get_in_map_port(ntohs(th->dport));
+                                size = ntohs(ip6h->payload);
+                                nport = GetTcpPortMapIn(th, size);
                                 
                                 if (nport == 0)
                                 {
@@ -779,9 +787,12 @@ Return Value:
     USHORT           is_translate;
     INT              ret = 0;
     UINT             packet_size     = 0;   // bytes need to be sent in the buffer
+    
+    INT              size = 0;
+    PTCP_STATE_CONTEXT  StateContext;
 
     //DBGPRINT(("==> PtReceivePacket called.\n"));
-	
+    
     //
     // Drop the packet silently if the upper miniport edge isn't initialized or
     // the miniport edge is in low power state
@@ -836,8 +847,8 @@ Return Value:
         //DBGPRINT(("==> PtReceivePacket: Get packet content success.\n"));
         
         // Set packet_size, replace i
-	    packet_size = PacketLength;
-	    
+        packet_size = PacketLength;
+        
         eh = (ETH_HEADER *)(pPacketContent);
         
         if (eh->type == htons(ETH_IP6))
@@ -1110,16 +1121,21 @@ Return Value:
                     th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                     
                     // Check the mapping list
-                    NdisAcquireSpinLock(&PortListLock);
-                    is_translate = port6to4_list[ntohs(th->dport)].trans;
-                    NdisReleaseSpinLock(&PortListLock);
+                    NdisAcquireSpinLock(&StateListLock);
+                    StateContext = TcpPortMapInTable[ntohs(th->dport)].State;
+                    if (StateContext != NULL)
+                    {
+                        is_translate = StateContext->Translated;
+                    }
+                    NdisReleaseSpinLock(&StateListLock);
                             
                     if (is_translate != 1)
                     {
                         DBGPRINT(("==> PtReceivePacket: Non-translated TCPv6 port.\n"));
                         //DBGPRINT(("==> Source port: %d\n", ntohs(th->sport)));
                         //DBGPRINT(("==> Old Dest port: %d\n", ntohs(th->dport)));
-                        nport = get_in_map_port(ntohs(th->dport));
+                        size = ntohs(ip6h->payload);
+                        nport = GetTcpPortMapIn(th, size);
                         
                         if (nport == 0)
                         {

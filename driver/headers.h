@@ -9,23 +9,23 @@
 /* Ethernet header */
 typedef struct _ETH_HEADER
 {
-	UCHAR  dmac[6];
-	UCHAR  smac[6];
-	USHORT type;
+    UCHAR  dmac[6];
+    UCHAR  smac[6];
+    USHORT type;
 } ETH_HEADER, *PETH_HEADER;
 
 /* ARP header */
 typedef struct _ARP_HEADER
 {
-	USHORT hw_type;
-	USHORT prot_type;
-	UCHAR  hw_size;
-	UCHAR  prot_size;
-	USHORT option;
-	UCHAR  smac[6];
-	UCHAR  sip[4];
-	UCHAR  dmac[6];
-	UCHAR  dip[4];
+    USHORT hw_type;
+    USHORT prot_type;
+    UCHAR  hw_size;
+    UCHAR  prot_size;
+    USHORT option;
+    UCHAR  smac[6];
+    UCHAR  sip[4];
+    UCHAR  dmac[6];
+    UCHAR  dip[4];
 } ARP_HEADER, *PARP_HEADER;
 
 /* IPv4 header */
@@ -40,7 +40,7 @@ typedef struct _IP_HEADER
     UCHAR  protocol;       // Protocol
     USHORT checksum;       // Header checksum
     UCHAR  saddr[4];       // Source address
-	UCHAR  daddr[4];       // Destination address
+    UCHAR  daddr[4];       // Destination address
 } IP_HEADER, *PIP_HEADER;
 
 /* Pseudo IPv4 header */
@@ -56,23 +56,23 @@ typedef struct _PSD_HEADER
 /* ICMPv4 header */
 typedef struct _ICMP_HEADER
 {
-	UCHAR  type;
-	UCHAR  code;
-	USHORT checksum;
-	USHORT id;
-	USHORT sequence;
+    UCHAR  type;
+    UCHAR  code;
+    USHORT checksum;
+    USHORT id;
+    USHORT sequence;
 } ICMP_HEADER, *PICMP_HEADER;
 
 /* IPv6 header */
 typedef struct _IP6_HEADER
 {
-	UCHAR    ver_pri;
-	UCHAR    flowlbl[3];
-	USHORT   payload;     // payload length (without header length)
-	UCHAR    nexthdr;
-	UCHAR    hoplimit;
-	UCHAR    saddr[16];   // 128 bits source address
-	UCHAR    daddr[16];   // 128 bits destination address
+    UCHAR    ver_pri;
+    UCHAR    flowlbl[3];
+    USHORT   payload;     // payload length (without header length)
+    UCHAR    nexthdr;
+    UCHAR    hoplimit;
+    UCHAR    saddr[16];   // 128 bits source address
+    UCHAR    daddr[16];   // 128 bits destination address
 } IP6_HEADER, *PIP6_HEADER;
 
 /* Pseudo IPv6 header */
@@ -88,11 +88,11 @@ typedef struct _PSD6_HEADER
 /* ICMPv6 header */
 typedef struct _ICMP6_HEADER
 {
-	UCHAR  type;
-	UCHAR  code;
-	USHORT checksum;
-	USHORT id;
-	USHORT sequence;    // MTU in UNREACH packets
+    UCHAR  type;
+    UCHAR  code;
+    USHORT checksum;
+    USHORT id;
+    USHORT sequence;    // MTU in UNREACH packets
 } ICMP6_HEADER, *PICMP6_HEADER;
 
 
@@ -126,14 +126,15 @@ typedef struct neigh_adver_header
 /* TCP header */
 typedef struct _TCP_HEADER
 {
-	USHORT   sport;   // 16 bits source port
-	USHORT   dport;  // 16 bits destination port
-	ULONG    seq;
-	ULONG    ack;
-	USHORT   hlen_flag;
-	USHORT   window;
-	USHORT   checksum;  // 16 bits checksum
-	USHORT   urp;
+    USHORT  sport;   // Source port
+    USHORT  dport;   // Destination port
+    ULONG   seq;
+    ULONG   ack;
+    UCHAR   doff;    // Data offset  
+    UCHAR   bits;    // Control bits
+    USHORT  window;
+    USHORT  checksum;
+    USHORT  urgptr;
 } TCP_HEADER, *PTCP_HEADER;
 
 /* UDP header*/
