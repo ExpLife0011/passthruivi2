@@ -95,34 +95,6 @@ typedef struct _ICMP6_HEADER
     USHORT sequence;    // MTU in UNREACH packets
 } ICMP6_HEADER, *PICMP6_HEADER;
 
-
-/* ICMPv6 Neighbor Solicitation header */
-typedef struct neigh_solic_header
-{
-    UCHAR  type;
-    UCHAR  code;
-    USHORT checksum;
-    UCHAR  reserved[4];
-    UCHAR  target[16];   // destination IPv6 address
-    UCHAR  opt_type;
-    UCHAR  length;
-    UCHAR  mac[6];
-} neigh_solic_header;
-
-/* ICMPv6 Neighbor Advertisement header */
-typedef struct neigh_adver_header
-{
-    UCHAR  type;
-    UCHAR  code;
-    USHORT checksum;
-    UCHAR  flag;
-    UCHAR  reserved[3];
-    UCHAR  target[16];   // source IPv6 address
-    UCHAR  opt_type;
-    UCHAR  length;
-    UCHAR  mac[6];
-} neigh_adver_header;
-
 /* TCP header */
 typedef struct _TCP_HEADER
 {

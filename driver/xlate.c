@@ -1,7 +1,6 @@
 #include "precomp.h"
 #pragma hdrstop
 
-UINT    buffer_size     = 65536; // total buffer size for a packet, constant
 UCHAR   prefix[16]      = { 0x20, 0x01, 0x0d, 0xa8, 0xff };
 USHORT  prefix_length   = 40;    // in bits!! prefix_length must be a multiple of 8
 USHORT  mod             = 256;   // 2^k
@@ -10,7 +9,6 @@ USHORT  res             = 1;
 
 // MAC for local NICs and gateway
 UCHAR   gatewayMAC[6]   = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
-UCHAR   localMAC[6]     = { 0x00, 0x0c, 0x29, 0x2e, 0x07, 0xdb };
 
 UINT    enable_xlate    = 1;  /* default to 1 */
 
@@ -94,7 +92,7 @@ VOID ip_addr4to6(PUCHAR ip_addr, PUCHAR ip6_addr, UINT localip)
         
         // New format
         *(ip6_addr+prefixLengthN+4) = mod_ratio + ((res >> 8) & 0x0f);
-        *(ip6_addr+prefixLengthN+5) = res &0xff;
+        *(ip6_addr+prefixLengthN+5) = res & 0xff;
     }
     
     return;
@@ -297,7 +295,7 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     PUCHAR        data_new;
     INT           data_size;
     USHORT        new_id;
-    INT           ret = 0;
+    BOOLEAN       ret;
     UINT          packet_size = 0;   // bytes need to be sent
     
     // Point headers
@@ -325,8 +323,8 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     icmp6h->sequence = icmph->sequence;
 
     // Id mapping
-    ret = get_out_map_id(ntohs(icmph->id), 1, &new_id);
-    if (ret != 0)
+    ret = GetIcmpIdMapOut(ntohs(icmph->id), TRUE, &new_id);
+    if (ret != TRUE)
     {
         DBGPRINT(("==> icmp4to6: find map failed!\n"));
         return 0;
@@ -366,7 +364,7 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     PUCHAR        data_new;
     INT           data_size;
     USHORT        old_id;
-    INT           ret = 0;
+    BOOLEAN       ret, trans;
     UINT          packet_size = 0;   // bytes need to be sent
     
     // Point headers
@@ -394,8 +392,8 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     icmph->sequence = icmp6h->sequence;
     
     // Port mapping
-    ret = get_in_map_id(ntohs(icmp6h->id), &old_id);
-    if (ret != 0)
+    ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &old_id, &trans);
+    if (ret != TRUE || trans != TRUE)
     {
         DBGPRINT(("==> icmp6to4: find map failed.\n"));
         return 0;
@@ -414,190 +412,6 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     
     // Set packet_size
     packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-    
-    return packet_size;
-}
-
-//
-// Translate IPv6 ICMP error message into IPv4 ICMP error message, 
-// return packet_size on success, return 0 if failed
-//
-UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket)
-{
-    ETH_HEADER   *eh;
-    IP6_HEADER   *ip6h;
-    ICMP6_HEADER *icmp6h;
-    IP6_HEADER   *embed_ip6h;
-    ICMP6_HEADER *embed_icmp6h;
-    UDP_HEADER   *embed_uh;
-    TCP_HEADER   *embed_th;
-    ETH_HEADER   *eh_4;
-    IP_HEADER    *ih;
-    ICMP_HEADER  *icmph;
-    IP_HEADER    *embed_ih;
-    ICMP_HEADER  *embed_icmph;
-    UDP_HEADER   *embed_uh_4;
-    TCP_HEADER   *embed_th_4;
-    
-    PUCHAR        data;
-    PUCHAR        data_new;
-    INT           data_size;
-    USHORT        old_id;
-    INT           size;
-    USHORT        oldport;
-    INT           ret = 0;
-    UINT          packet_size = 0; // bytes need to be sent
-    
-    // Point to headers
-    eh           = (ETH_HEADER   *)(pPacket);
-    ip6h         = (IP6_HEADER   *)(pPacket + sizeof(ETH_HEADER));
-    icmp6h       = (ICMP6_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    embed_ip6h   = (IP6_HEADER   *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER));
-    eh_4         = (ETH_HEADER   *)(pNewPacket);
-    ih           = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
-    icmph        = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
-    embed_ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER));
-    
-    // Build Ethernet header
-    ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
-    ETH_COPY_NETWORK_ADDRESS(eh_4->smac, eh->smac);
-    eh_4->type = htons(ETH_IP);
-
-    // Build IPv4 header
-    ip6to4(ip6h, ih);  // Notice: ih->length need to be modified later!
-    ih->protocol = IP_ICMP;
-
-    // Build ICMPv4 header
-    switch (icmp6h->type)
-    {
-        case ICMP6_TIME_EXCEED:
-            icmph->type = ICMP_TIME_EXCEEDED;
-            icmph->code = icmp6h->code;
-            break;
-        case ICMP6_DEST_UNREACH:
-            icmph->type = ICMP_DEST_UNREACH;
-            switch (icmp6h->code)
-            {
-                case ICMP6_NOROUTE:
-                    icmph->code = ICMP_NET_UNREACH;
-                    break;
-                case ICMP6_PORT_UNREACH:
-                    icmph->code = ICMP_PORT_UNREACH;
-                    break;
-                case ICMP6_ADM_PROHIBITED:
-                    icmph->code = ICMP_PKT_FILTERED;
-                    break;
-                case ICMP6_ADDR_UNREACH:
-                default:
-                    icmph->code = ICMP_HOST_UNREACH;
-                    break;
-            }
-            break;
-        case ICMP6_PKT_TOOBIG:
-            icmph->type = ICMP_DEST_UNREACH;
-            icmph->code = ICMP_FRAG_NEEDED;
-            // Change MTU
-            icmph->sequence = htons(ntohs(icmp6h->sequence) - 28);
-        default:
-            DBGPRINT(("==> icmp6to4_embed: unsupported icmpv6 type. Drop.\n"));
-            return 0;
-    }
-    icmph->checksum = 0;
-    
-    // Translate embedded IPv6 packet
-    
-    // Build embed IPv4 header
-    ip6to4(embed_ip6h, embed_ih);
-    // Total length is 20 bytes shorter due to embed translation
-    ih->length = htons(ntohs(ih->length) - 20);
-    
-    if (embed_ip6h->nexthdr == IP_ICMP6)
-    {
-        embed_ih->protocol = IP_ICMP;
-        
-        // Point to embed headers
-        embed_icmp6h = (ICMP6_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-        embed_icmph  = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER) + sizeof(IP_HEADER));
-        
-        // Build embed ICMPv4 header
-        embed_icmph->type = ICMP_ECHO;
-        embed_icmph->code = 0;
-        embed_icmph->checksum = 0;
-        embed_icmph->id = embed_icmp6h->id;
-        embed_icmph->sequence = embed_icmp6h->sequence;
-        
-        // Port mapping for embed id
-        ret = get_in_map_id(ntohs(embed_icmp6h->id), &old_id);
-        if (ret != 0)
-        {
-            DBGPRINT(("==> icmp6to4_embed: find map for embed icmpv6 failed.\n"));
-            return 0;
-        }
-        embed_icmph->id = htons(old_id);
-        
-        // Copy data
-        data       = pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
-        data_new   = pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
-        data_size  = ntohs(ip6h->payload) - sizeof(IP6_HEADER) - 2 * sizeof(ICMP6_HEADER);
-        NdisMoveMemory(data_new, data, data_size);
-        
-        checksum_icmp4(embed_ih, embed_icmph);
-    }
-    else if (embed_ip6h->nexthdr == IP_UDP)
-    {
-        // Point to embed headers
-        embed_uh    = (UDP_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-        embed_uh_4  = (UDP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER) + sizeof(IP_HEADER));
-        
-        // Copy UDP header & data
-        size = ntohs(ip6h->payload) - sizeof(ICMP6_HEADER) - sizeof(IP6_HEADER);
-        NdisMoveMemory(embed_uh_4, embed_uh, size);
-        
-        // Port mapping
-        oldport = get_in_map_port(ntohs(embed_uh->sport));
-        if (oldport == 0)
-        {
-            DBGPRINT(("==> icmp6to4_embed: find map for embed udpv6 failed.\n"));
-            return 0;
-        }
-        embed_uh_4->sport = htons(oldport);
-        
-        checksum_udp4(embed_ih, embed_uh_4);
-    }
-    else if (embed_ip6h->nexthdr == IP_TCP)
-    {
-        // Point to embed headers
-        embed_th    = (TCP_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-        embed_th_4  = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER) + sizeof(IP_HEADER));
-        
-        // Copy TCP header & data
-        size = ntohs(ip6h->payload) - sizeof(ICMP6_HEADER) - sizeof(IP6_HEADER);
-        NdisMoveMemory(embed_th_4, embed_th, size);
-        
-        // Port mapping
-        oldport = get_in_map_port(ntohs(embed_th->sport));
-        if (oldport == 0)
-        {
-            DBGPRINT(("==> icmp6to4_embed: find map for embed tcpv6 failed.\n"));
-            return 0;
-        }
-        embed_th_4->sport = htons(oldport);
-        
-        checksum_tcp4(embed_ih, embed_th_4);
-    }
-    else
-    {
-        DBGPRINT(("==> icmp6to4_embed: Unsupported embed header type. Drop.\n"));
-        return 0;
-    }
-    
-    // Checksum outside header
-    checksum_icmp4(ih, icmph);
-    
-    // Done
-    
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length);
     
     return packet_size;
 }

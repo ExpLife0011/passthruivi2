@@ -1,14 +1,12 @@
 #ifndef _XLATE_H
 #define _XLATE_H
 
-extern UINT     buffer_size;
 extern UCHAR    prefix[16];
 extern USHORT   prefix_length;
 extern USHORT   mod;
 extern UCHAR    mod_ratio;
 extern USHORT   res;
 extern UCHAR    gatewayMAC[6];
-extern UCHAR    localMAC[6];
 extern UINT     enable_xlate;
 extern UINT     xlate_mode;
 
@@ -25,7 +23,6 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
-UINT icmp6to4_embed(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
 

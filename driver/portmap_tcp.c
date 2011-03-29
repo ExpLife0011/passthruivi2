@@ -1017,12 +1017,10 @@ Routine Description:
     
 --*/
 {
-    //NdisAcquireSpinLock(&StateListLock);
     InitializeListHead(&StateListHead);
     StateListLength = 0;
     NdisZeroMemory(TcpPortMapOutTable, 65536 * sizeof(TCP_PORT_MAP));
     NdisZeroMemory(TcpPortMapInTable, 65536 * sizeof(TCP_PORT_MAP));
-    //NdisReleaseSpinLock(&StateListLock);
 }
 
 
@@ -1057,7 +1055,7 @@ Routine Description:
         PTCP_STATE_CONTEXT pState = CONTAINING_RECORD(p, TCP_STATE_CONTEXT, ListEntry);
         
         // Release TCP state info and reset corresponding hash table entry
-        DBGPRINT(("==> ResetTcpLists: Port map %d -> %d removed on status %d.\n", 
+        DBGPRINT(("==> ResetTcpListsSafe: Port map %d -> %d removed on status %d.\n", 
                   pState->OriginalPort, pState->MappedPort, pState->Status));
         // Protect the loop from break
         temp = p;
@@ -1069,7 +1067,7 @@ Routine Description:
         RemoveEntryList(temp);
         StateListLength--;
         NdisFreeMemory(pState, 0, 0);
-        DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+        DBGPRINT(("==> ResetTcpListsSafe: TCP state context memory freed.\n"));
         // Go to next entry
     }
     
@@ -1099,7 +1097,6 @@ Routine Description:
 {
     PLIST_ENTRY p, temp;
     
-    
     if (IsListEmpty(&StateListHead))
     {
         // State list is empty, nothing to be done.
@@ -1124,7 +1121,7 @@ Routine Description:
         RemoveEntryList(temp);
         StateListLength--;
         NdisFreeMemory(pState, 0, 0);
-        DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+        DBGPRINT(("==> ResetTcpLists: TCP state context memory freed.\n"));
         // Go to next entry
     }
     
@@ -1200,7 +1197,7 @@ Routine Description:
         if (IsTimeOut(&now, &(pState->StateSetTime), &(pState->StateTimeOut)))
         {
             // Time out. Release TCP state info and reset corresponding hash table entry
-            DBGPRINT(("==> RefreshTcpListEntry: Port map %d -> %d time out on status %d. Delete.\n", 
+            DBGPRINT(("==> RefreshTcpListEntrySafe: Port map %d -> %d time out on status %d. Delete.\n", 
                       pState->OriginalPort, pState->MappedPort, pState->Status));
             // Protect the loop from break
             temp = p;
@@ -1212,7 +1209,7 @@ Routine Description:
             RemoveEntryList(temp);
             StateListLength--;
             NdisFreeMemory(pState, 0, 0);
-            DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+            DBGPRINT(("==> RefreshTcpListEntrySafe: TCP state context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -1275,7 +1272,7 @@ Routine Description:
             RemoveEntryList(temp);
             StateListLength--;
             NdisFreeMemory(pState, 0, 0);
-            DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+            DBGPRINT(("==> RefreshTcpListEntry: TCP state context memory freed.\n"));
             // Go to next entry
         }
         else

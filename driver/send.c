@@ -40,7 +40,7 @@ Return Value:
     PUCHAR            pBuf;
     UINT              BufLength;
     PMDL              pNext;
-    UINT              j; // Caution: j, NOT i!
+    UINT              j; //XXX: j, NOT i!
     PNDIS_BUFFER      tempBuffer, MyBuffer;
 
     // NAT defined
@@ -54,7 +54,7 @@ Return Value:
     UDP_HEADER      *uh;
     USHORT           nport = 0;
     USHORT           tempMod, tempRes;
-    INT              ret = 0;
+    BOOLEAN          ret;
     UINT             packet_size     = 0; // bytes need to be sent in the buffer
     INT              k;
     UCHAR            tempChar;
@@ -499,9 +499,9 @@ Return Value:
                                 //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
                                 
                                 // We use nport here to avoid adding new variable
-                                ret = get_out_map_id(ntohs(icmp6h->id), 0, &nport);
+                                ret = GetIcmpIdMapOut(ntohs(icmp6h->id), FALSE, &nport);
                                 
-                                if (ret != 0)
+                                if (ret != TRUE)
                                 {
                                     DBGPRINT(("==> MPSendPackets: Find map failed. Drop.\n"));
                                     Status = NDIS_STATUS_FAILURE;
@@ -533,7 +533,7 @@ Return Value:
                 //NDIS_PACKET_LAST_NDIS_BUFFER(MyPacket) = NDIS_PACKET_LAST_NDIS_BUFFER(Packet);
                 //
                 // changed for NAT
-
+                //
                 MyPacket->Private.Head->Next = NULL;
                 MyPacket->Private.Tail = NULL;
                 

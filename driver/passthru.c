@@ -95,18 +95,8 @@ Return Value:
     Status = NDIS_STATUS_SUCCESS;
     NdisAllocateSpinLock(&GlobalLock);
     
-    // Prepare the mapping lists
-    NdisAllocateSpinLock(&PortListLock);
-    NdisAllocateSpinLock(&IdListLock);
-    
-    reset_lists();
-    
-    // Init TCP state list
-    NdisAllocateSpinLock(&StateListLock);
-    InitTcpLists();
-    
+    InitMapListsAndLocks();
     DBGPRINT(("==> Map list initialized.\n"));
-    // Done!
 
     NdisMInitializeWrapper(&NdisWrapperHandle, DriverObject, RegistryPath, NULL);
 
@@ -487,11 +477,7 @@ PtUnload(
     NdisFreeSpinLock(&GlobalLock);
     DBGPRINT(("PtUnload: done!\n"));
     
-    ResetTcpLists();
-    NdisFreeSpinLock(&StateListLock);
-    
-    // Release list spin_locks
-    NdisFreeSpinLock(&PortListLock);
-    NdisFreeSpinLock(&IdListLock);
+    ReleaseMapListsAndLocks();
+    DBGPRINT(("PtUnload: mapping lists cleared.\n"));
 }
 

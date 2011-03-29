@@ -447,6 +447,7 @@ typedef struct _ADAPT
     NDIS_HANDLE                    SendBufferPoolHandle;
     NDIS_HANDLE                    RecvBufferPoolHandle;
     ULONG                          MaxFrameSize;       // Maximum frame size of the underlying miniport driver
+    UCHAR                          LocalMacAddress[6];
 
 } ADAPT, *PADAPT;
 

@@ -15,3 +15,4 @@
 #include "portmap.h"
 #include "xlate.h"
 #include "portmap_tcp.h"
+#include "icmpmap.h"

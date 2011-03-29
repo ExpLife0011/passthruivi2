@@ -703,7 +703,22 @@ Return Value:
             // Adjust for IVI's need
             *(PULONG)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer -= IVI_PACKET_OVERHEAD;  // Minus 20 overhead.
         }
-
+        
+        if ((Oid == OID_802_3_PERMANENT_ADDRESS) && (Status == NDIS_STATUS_SUCCESS))
+        {
+            // Ethernet MAC
+            DBGPRINT(("==> PtRequestComplete: OID_802_3_PERMANENT_ADDRESS info buffer value is %02x-%02x-%02x-%02x-%02x-%02x on pAdapt %p\n", 
+                        *(PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer, 
+                        *((PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer + 1), 
+                        *((PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer + 2), 
+                        *((PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer + 3), 
+                        *((PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer + 4), 
+                        *((PUCHAR)NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer + 5), 
+                        pAdapt));
+            // Record underlying miniport's MAC
+            NdisMoveMemory((PVOID)pAdapt->LocalMacAddress, NdisRequest->DATA.QUERY_INFORMATION.InformationBuffer, 6);
+        }
+        
         NdisMQueryInformationComplete(pAdapt->MiniportHandle,
                                       Status);
         break;

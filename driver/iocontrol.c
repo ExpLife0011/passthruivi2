@@ -96,7 +96,7 @@ Return Value:
                     mod_ratio = mod_ratio << 4;
                     DBGPRINT(("==> ioctl: set mod to %d\n", mod));
                     DBGPRINT(("==> ioctl: set mod_ratio to %02x\n", mod_ratio));
-                    reset_lists();
+                    ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
             }
@@ -135,7 +135,7 @@ Return Value:
                 {
                     res = temp;
                     DBGPRINT(("==> ioctl: set res to %d\n", res));
-                    reset_lists();
+                    ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
             }
@@ -184,22 +184,6 @@ Return Value:
             }
             break;
         
-        case IOCTL_PTUSERIO_SET_AUTOCONFIG:
-            AutoConfig = 1;
-            DBGPRINT(("==> ioctl: autoconfig enabled by user.\n"));
-            break;
-            
-        case IOCTL_PTUSERIO_UNSET_AUTOCONFIG:
-            AutoConfig = 0;
-            DBGPRINT(("==> ioctl: autoconfig disabled by user.\n"));
-            mod = 256;
-            DBGPRINT(("==> ioctl: reset Mod to %d\n", mod));
-            res = 1;
-            DBGPRINT(("==> ioctl: reset Res to %d\n", res));
-            reset_lists();
-            DBGPRINT(("==> Old Map List Freed.\n"));
-            break;
-        
         case IOCTL_PTUSERIO_SET_PREFIX:
             if (inputBufferLength != 16)
             {
@@ -213,7 +197,7 @@ Return Value:
                             prefix[0], prefix[1], prefix[2], prefix[3], prefix[4], prefix[5], 
                             prefix[6], prefix[7], prefix[8], prefix[9], prefix[10], prefix[11], 
                             prefix[12], prefix[13], prefix[14], prefix[15]));
-                reset_lists();
+                ResetMapListsSafe();
                 DBGPRINT(("==> Old Map List Freed.\n"));
             }
             break;
@@ -250,7 +234,7 @@ Return Value:
                 {
                     prefix_length = temp;
                     DBGPRINT(("==> ioctl: set prefix_length to %d\n", prefix_length));
-                    reset_lists();
+                    ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
             }
@@ -283,14 +267,14 @@ Return Value:
         case IOCTL_PTUSERIO_ENABLE_MPLEX:
             xlate_mode = 1;
             DBGPRINT(("==> ioctl: 1:N mapping enabled by user.\n"));
-            reset_lists();
+            ResetMapListsSafe();
             DBGPRINT(("==> Old Map List Freed.\n"));
             break;
             
         case IOCTL_PTUSERIO_DISABLE_MPLEX:
             xlate_mode = 0;
             DBGPRINT(("==> ioctl: 1:N mapping disabled by user.\n"));
-            reset_lists();
+            ResetMapListsSafe();
             DBGPRINT(("==> Old Map List Freed.\n"));
             break;
             

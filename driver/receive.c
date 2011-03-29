@@ -61,11 +61,10 @@ Return Value:
     TCP_HEADER       *th;
     UDP_HEADER       *uh;
     USHORT           nport = 0;
-    USHORT           is_translate = 0;
-    INT              ret = 0;
+    BOOLEAN          is_translate = FALSE;
+    BOOLEAN          ret;
     UINT             packet_size = 0;   // bytes need to be sent in the buffer
     
-    INT              size = 0;
     PTCP_STATE_CONTEXT  StateContext;
 
     //DBGPRINT(("==> PtReceive called.\n"));
@@ -172,11 +171,29 @@ Return Value:
                             if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
                             {
                                 // Check the mapping list
-                                NdisAcquireSpinLock(&IdListLock);
-                                is_translate = icmp_id6to4_list[ntohs(icmp6h->id)].trans;
-                                NdisReleaseSpinLock(&IdListLock);
+                                ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &nport, &is_translate);
                                 
-                                if (is_translate == 1) // need translation
+                                if (ret != TRUE)
+                                {
+                                    DBGPRINT(("==> PtReceivePacket: Check map list failed. Drop.\n"));
+                                    Status = NDIS_STATUS_NOT_ACCEPTED;
+                                    NdisFreeMemory(pPacketContent, 0, 0);
+                                    NdisDprFreePacket(MyPacket);
+                                    return Status;
+                                }
+                                
+                                if (is_translate != TRUE) // need translation
+                                {
+                                    DBGPRINT(("==> PtReceive: Non-translated ICMPv6 id.\n"));
+                                    //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                                    
+                                    icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), nport);
+                                    icmp6h->id = htons(nport);
+                                    
+                                    //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
+                                    //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
+                                }
+                                else
                                 {
                                     Status = NdisAllocateMemoryWithTag((PVOID)&pNewPacketContent, PacketLength, TAG);
                                     if (Status != NDIS_STATUS_SUCCESS)
@@ -209,211 +226,15 @@ Return Value:
                                     NdisFreeMemory(pNewPacketContent, 0, 0);
                                     //DBGPRINT(("==> PtReceive: old packet memory freed.\n"));
                                 }
-                                else
-                                {
-                                    DBGPRINT(("==> PtReceive: Non-translated ICMPv6 id.\n"));
-                                    //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
-                                    
-                                    // We use nport here to avoid adding new variable
-                                    ret = get_in_map_id(ntohs(icmp6h->id), &nport);
-                                    
-                                    if (ret != 0)
-                                    {
-                                        DBGPRINT(("==> PtReceive: Find map failed. Drop.\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        NdisFreeMemory(pPacketContent, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        return Status;
-                                    }
-                                                      
-                                    icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), nport);
-                                    icmp6h->id = htons(nport);
-                                    
-                                    //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
-                                    //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
-                                }
                             }
-                            /* 
-                             * To Be Tested!
-                            else if (icmp6h->type == ICMP6_DEST_UNREACH || icmp6h->type == ICMP6_PKT_TOOBIG || icmp6h->type == ICMP6_TIME_EXCEED) // Error message
-                            {
-                                embed_ip6h = (IP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) );
-                                
-                                // Check embedded header
-                                if( embed_ip6h->nexthdr == IP_ICMP6 )
-                                {
-                                    embed_icmp6h = (ICMP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER) );
-                                    
-                                    // Check embedded icmpv6 type
-                                    if (embed_icmp6h->type != ICMP6_ECHO) 
-                                    {
-                                        DBGPRINT(("==> PtReceive: Embedded icmpv6 type unsupported! Drop!\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        NdisFreeMemory(pPacketContent, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        return Status;
-                                    }
-                                    
-                                    // Check the mapping list for embedded id
-                                    NdisAcquireSpinLock(&IdListLock);
-                                    is_translate = icmp_id6to4_list[ntohs(embed_icmp6h->id)].trans;
-                                    NdisReleaseSpinLock(&IdListLock);
-                                }
-                                else if( embed_ip6h->nexthdr == IP_UDP )
-                                {
-                                    embed_uh = (UDP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                    
-                                    // Check the mapping list
-                                    NdisAcquireSpinLock(&PortListLock);
-                                    is_translate = port6to4_list[ntohs(embed_uh->dport)].trans;
-                                    NdisReleaseSpinLock(&PortListLock);
-                                }
-                                else if( embed_ip6h->nexthdr == IP_TCP )
-                                {
-                                    embed_th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                    
-                                    // Check the mapping list
-                                    NdisAcquireSpinLock(&PortListLock);
-                                    is_translate = port6to4_list[ntohs(embed_th->dport)].trans;
-                                    NdisReleaseSpinLock(&PortListLock);
-                                }
-                                else
-                                {
-                                    DBGPRINT(("==> PtReceive: Embedded header type unsupported! Drop!\n"));
-                                    Status = NDIS_STATUS_NOT_ACCEPTED;
-                                    NdisFreeMemory(pPacketContent, 0, 0);
-                                    NdisDprFreePacket(MyPacket);
-                                    return Status;
-                                }
-                                
-                                if (is_translate == 1) // embed need translation
-                                {
-                                    Status = NdisAllocateMemoryWithTag( (PVOID)&pNewPacketContent, buffer_size, TAG );
-                                    if (Status != NDIS_STATUS_SUCCESS)
-                                    {
-                                        DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed with pNewPacketContent! Drop packet!\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        NdisFreeMemory(pPacketContent, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        return Status;
-                                    }
-                                    //i -= 20;
-                                    NdisZeroMemory( pNewPacketContent, buffer_size );
-                                    
-                                    packet_size = icmp6to4_embed( pPacketContent, pNewPacketContent );
-                                    if (packet_size == 0)
-                                    {
-                                        DBGPRINT(("==> PtReceive: Translate embedded packet failed with icmp6to4! Drop packet!\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        // Notice: we have two memory to free here!
-                                        NdisFreeMemory(pPacketContent, 0, 0);
-                                        NdisFreeMemory(pNewPacketContent, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        return Status;
-                                    }
-                                    
-                                    // Switch pointers and free old packet memory
-                                    pTemp = pPacketContent;
-                                    pPacketContent = pNewPacketContent;
-                                    pNewPacketContent = pTemp;
-                                    NdisFreeMemory( pNewPacketContent, 0, 0 );
-                                    //DBGPRINT(("==> PtReceive: old packet memory freed!\n"));
-                                }
-                                else
-                                {
-                                    DBGPRINT(("==> PtReceive: Non-translated embed header!\n"));
-                                    
-                                    // Handle embedded header, map port/id only
-                                    if( embed_ip6h->nexthdr == IP_ICMP6 )
-                                    {
-                                        embed_icmp6h = (ICMP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER) );
-                                        
-                                        //DBGPRINT(("==> Old Id: %d\n", ntohs(embed_icmp6h->id) ));
-                                        
-                                        // We use nport here to avoid adding new variable
-                                        ret = get_in_map_id( ntohs(embed_icmp6h->id), &nport );
-                                        
-                                        if (ret != 0) {
-                                            DBGPRINT(("==> PtReceive: Find map for embed id failed! Drop!\n"));
-                                            Status = NDIS_STATUS_NOT_ACCEPTED;
-                                            NdisFreeMemory(pPacketContent, 0, 0);
-                                            NdisDprFreePacket(MyPacket);
-                                            return Status;
-                                        }
-                                                          
-                                        embed_icmp6h->checksum = checksum_adjust( ntohs(embed_icmp6h->checksum), ntohs(embed_icmp6h->id), nport );
-                                        embed_icmp6h->id = htons(nport);
-                                        
-                                        //DBGPRINT(("==> New Id: %d\n", ntohs(embed_icmp6h->id) ));
-                                        //DBGPRINT(("==> New checksum: %02x\n", embed_icmp6h->checksum ));
-                                    }
-                                    else if( embed_ip6h->nexthdr == IP_TCP )
-                                    {
-                                        embed_th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                        
-                                        //DBGPRINT(("==> Source port: %d\n", ntohs(embed_th->sport) ));
-                                        //DBGPRINT(("==> Old Dest port: %d\n", ntohs(embed_th->dport) ));
-                                        nport = get_in_map_port( ntohs(embed_th->sport) );
-                                        
-                                        if (nport == 0) {
-                                            DBGPRINT(("==> PtReceive: Find map failed! Drop!\n"));
-                                            Status = NDIS_STATUS_NOT_ACCEPTED;
-                                            NdisFreeMemory(pPacketContent, 0, 0);
-                                            NdisDprFreePacket(MyPacket);
-                                            return Status;
-                                        }
-                                                          
-                                        embed_th->checksum = checksum_adjust( ntohs(embed_th->checksum), ntohs(embed_th->sport), nport );
-                                        embed_th->sport = htons(nport);
-                                        
-                                        //DBGPRINT(("==> New Source port: %d\n", ntohs(embed_th->sport) ));
-                                        //DBGPRINT(("==> New checksum: %02x\n", embed_th->checksum ));
-                                    }
-                                    else if( embed_ip6h->nexthdr == IP_UDP )
-                                    {
-                                        embed_uh = (UDP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                        
-                                        //DBGPRINT(("==> Source port: %d\n", ntohs(embed_uh->sport) ));
-                                        //DBGPRINT(("==> Old Dest port: %d\n", ntohs(embed_uh->dport) ));
-                                        nport = get_in_map_port( ntohs(embed_uh->sport) );
-                                        
-                                        if (nport == 0) {
-                                            DBGPRINT(("==> PtReceive: Find map failed! Drop!\n"));
-                                            Status = NDIS_STATUS_NOT_ACCEPTED;
-                                            NdisFreeMemory(pPacketContent, 0, 0);
-                                            NdisDprFreePacket(MyPacket);
-                                            return Status;
-                                        }
-                                                          
-                                        embed_uh->checksum = checksum_adjust( ntohs(embed_uh->checksum), ntohs(embed_uh->sport), nport );
-                                        embed_uh->sport = htons(nport);
-                                        
-                                        //DBGPRINT(("==> New Source port: %d\n", ntohs(embed_uh->sport) ));
-                                        //DBGPRINT(("==> New checksum: %02x\n", embed_uh->checksum ));
-                                    }
-                                    else
-                                    {
-                                        DBGPRINT(("==> PtReceive: Embedded header type unsupported! Drop!\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        NdisFreeMemory(pPacketContent, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        return Status;
-                                    }
-                                }
-                            }
-                            *
-                            */
-                            
-                            /*
-                            else
+                            /*else
                             {
                                 DBGPRINT(("==> PtReceive: Unkown ICMPv6 type, drop packet!\n"));
                                 Status = NDIS_STATUS_NOT_ACCEPTED;
                                 NdisFreeMemory(pPacketContent, 0, 0);
                                 NdisDprFreePacket(MyPacket);
                                 return Status;
-                            }
-                            */
+                            }*/
                         }
                         else if (ip6h->nexthdr == IP_TCP)
                         {
@@ -436,8 +257,7 @@ Return Value:
                                 DBGPRINT(("==> PtReceive: Non-translated TCPv6 port.\n"));
                                 //DBGPRINT(("==> Source port: %d\n", ntohs(th->sport)));
                                 //DBGPRINT(("==> Old Dest port: %d\n", ntohs(th->dport)));
-                                size = ntohs(ip6h->payload);
-                                nport = GetTcpPortMapIn(th, size);
+                                nport = GetTcpPortMapIn(th, ntohs(ip6h->payload));
                                 
                                 if (nport == 0)
                                 {
@@ -784,11 +604,10 @@ Return Value:
     TCP_HEADER       *th;
     UDP_HEADER       *uh;
     USHORT           nport = 0;
-    USHORT           is_translate;
-    INT              ret = 0;
-    UINT             packet_size     = 0;   // bytes need to be sent in the buffer
+    BOOLEAN          is_translate = FALSE;
+    BOOLEAN          ret;
+    UINT             packet_size = 0;   // bytes need to be sent in the buffer
     
-    INT              size = 0;
     PTCP_STATE_CONTEXT  StateContext;
 
     //DBGPRINT(("==> PtReceivePacket called.\n"));
@@ -869,11 +688,29 @@ Return Value:
                     if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
                     {
                         // Check the mapping list
-                        NdisAcquireSpinLock(&IdListLock);
-                        is_translate = icmp_id6to4_list[ntohs(icmp6h->id)].trans;
-                        NdisReleaseSpinLock(&IdListLock);
+                        ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &nport, &is_translate);
+                            
+                        if (ret != TRUE)
+                        {
+                            DBGPRINT(("==> PtReceivePacket: Check map list failed. Drop.\n"));
+                            Status = NDIS_STATUS_NOT_ACCEPTED;
+                            NdisFreeMemory(pPacketContent, 0, 0);
+                            NdisDprFreePacket(MyPacket);
+                            return 0;
+                        }
                         
-                        if (is_translate == 1) // need translation
+                        if (is_translate != TRUE)  // 6to6 mapping
+                        {
+                            DBGPRINT(("==> PtReceivePacket: Non-translated ICMPv6 id.\n"));
+                            //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                            
+                            icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), nport);
+                            icmp6h->id = htons(nport);
+                            
+                            //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
+                            //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
+                        }
+                        else  // 6to4 mapping
                         {
                             Status = NdisAllocateMemoryWithTag( (PVOID)&pNewPacketContent, PacketLength, TAG );
                             if (Status != NDIS_STATUS_SUCCESS)
@@ -909,201 +746,7 @@ Return Value:
                                 //DBGPRINT(("==> PtReceivePacket: old packet memory freed.\n"));
                             }
                         }
-                        else
-                        {
-                            DBGPRINT(("==> PtReceivePacket: Non-translated ICMPv6 id.\n"));
-                            //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
-                            
-                            // We use nport here to avoid adding new variable
-                            ret = get_in_map_id(ntohs(icmp6h->id), &nport);
-                            
-                            if (ret != 0)
-                            {
-                                DBGPRINT(("==> PtReceivePacket: Find map failed. Drop.\n"));
-                                Status = NDIS_STATUS_NOT_ACCEPTED;
-                                NdisFreeMemory(pPacketContent, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
-                            }
-                                              
-                            icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), nport);
-                            icmp6h->id = htons(nport);
-                            
-                            //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
-                            //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
-                        }
                     }
-                    /*
-                     * To Be Tested!
-                    else if (icmp6h->type == ICMP6_DEST_UNREACH || icmp6h->type == ICMP6_PKT_TOOBIG || icmp6h->type == ICMP6_TIME_EXCEED) // Error message
-                    {
-                        embed_ip6h = (IP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) );
-                        
-                        // Check embedded header
-                        if( embed_ip6h->nexthdr == IP_ICMP6 )
-                        {
-                            embed_icmp6h = (ICMP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER) );
-                            
-                            // Check embedded icmpv6 type
-                            if(embed_icmp6h->type != ICMP6_ECHO) 
-                            {
-                                DBGPRINT(("==> PtReceivePacket: Embedded icmpv6 type unsupported! Drop!\n"));
-                                Status = NDIS_STATUS_NOT_ACCEPTED;
-                                NdisFreeMemory(pPacketContent, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
-                            }
-                            
-                            // Check the mapping list for embedded id
-                            NdisAcquireSpinLock(&IdListLock);
-                            is_translate = icmp_id6to4_list[ntohs(embed_icmp6h->id)].trans;
-                            NdisReleaseSpinLock(&IdListLock);
-                        }
-                        else if( embed_ip6h->nexthdr == IP_UDP )
-                        {
-                            embed_uh = (UDP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                            
-                            // Check the mapping list
-                            NdisAcquireSpinLock(&PortListLock);
-                            is_translate = port6to4_list[ntohs(embed_uh->dport)].trans;
-                            NdisReleaseSpinLock(&PortListLock);
-                        }
-                        else if( embed_ip6h->nexthdr == IP_TCP )
-                        {
-                            embed_th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                            
-                            // Check the mapping list
-                            NdisAcquireSpinLock(&PortListLock);
-                            is_translate = port6to4_list[ntohs(embed_th->dport)].trans;
-                            NdisReleaseSpinLock(&PortListLock);
-                        }
-                        else
-                        {
-                            DBGPRINT(("==> PtReceivePacket: Embedded header type unsupported! Drop!\n"));
-                            Status = NDIS_STATUS_NOT_ACCEPTED;
-                            NdisFreeMemory(pPacketContent, 0, 0);
-                            NdisDprFreePacket(MyPacket);
-                            return 0;
-                        }
-                        
-                        if (is_translate == 1) // embed header need translation
-                        {
-                            Status = NdisAllocateMemoryWithTag( (PVOID)&pNewPacketContent, buffer_size, TAG );
-                            if (Status != NDIS_STATUS_SUCCESS)
-                            {
-                                DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed with pNewPacketContent! Drop packet!\n"));
-                                Status = NDIS_STATUS_NOT_ACCEPTED;
-                                NdisFreeMemory(pPacketContent, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
-                            }
-                            //i -= 20;
-                            NdisZeroMemory( pNewPacketContent, buffer_size );
-                            
-                            packet_size = icmp6to4_embed( pPacketContent, pNewPacketContent );
-                            if (packet_size == 0)
-                            {
-                                DBGPRINT(("==> PtReceivePacket: Translate embedded packet failed with icmp6to4! Drop packet!\n"));
-                                Status = NDIS_STATUS_NOT_ACCEPTED;
-                                // Notice: we have two memory to free here!
-                                NdisFreeMemory(pPacketContent, 0, 0);
-                                NdisFreeMemory(pNewPacketContent, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
-                            }
-                            
-                            // Switch pointers and free old packet memory
-                            pTemp = pPacketContent;
-                            pPacketContent = pNewPacketContent;
-                            pNewPacketContent = pTemp;
-                            NdisFreeMemory( pNewPacketContent, 0, 0 );
-                            //DBGPRINT(("==> PtReceivePacket: old packet memory freed!\n"));
-                        }
-                        else
-                        {
-                            DBGPRINT(("==> PtReceivePacket: Non-translated embed header!\n"));
-                            
-                            // Handle embedded header, map port/id only
-                            if( embed_ip6h->nexthdr == IP_ICMP6 )
-                            {
-                                embed_icmp6h = (ICMP6_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER) );
-                                
-                                //DBGPRINT(("==> Old Id: %d\n", ntohs(embed_icmp6h->id) ));
-                                
-                                // We use nport here to avoid adding new variable
-                                ret = get_in_map_id( ntohs(embed_icmp6h->id), &nport );
-                                
-                                if (ret != 0) {
-                                    DBGPRINT(("==> PtReceivePacket: Find map for embed id failed! Drop!\n"));
-                                    Status = NDIS_STATUS_NOT_ACCEPTED;
-                                    NdisFreeMemory(pPacketContent, 0, 0);
-                                    NdisDprFreePacket(MyPacket);
-                                    return 0;
-                                }
-                                                  
-                                embed_icmp6h->checksum = checksum_adjust( ntohs(embed_icmp6h->checksum), ntohs(embed_icmp6h->id), nport );
-                                embed_icmp6h->id = htons(nport);
-                                
-                                //DBGPRINT(("==> New Id: %d\n", ntohs(embed_icmp6h->id) ));
-                                //DBGPRINT(("==> New checksum: %02x\n", embed_icmp6h->checksum ));
-                            }
-                            else if( embed_ip6h->nexthdr == IP_TCP )
-                            {
-                                embed_th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                
-                                //DBGPRINT(("==> Source port: %d\n", ntohs(embed_th->sport) ));
-                                //DBGPRINT(("==> Old Dest port: %d\n", ntohs(embed_th->dport) ));
-                                nport = get_in_map_port( ntohs(embed_th->sport) );
-                                
-                                if (nport == 0) {
-                                    DBGPRINT(("==> PtReceivePacket: Find map failed! Drop!\n"));
-                                    Status = NDIS_STATUS_NOT_ACCEPTED;
-                                    NdisFreeMemory(pPacketContent, 0, 0);
-                                    NdisDprFreePacket(MyPacket);
-                                    return 0;
-                                }
-                                                  
-                                embed_th->checksum = checksum_adjust( ntohs(embed_th->checksum), ntohs(embed_th->sport), nport );
-                                embed_th->sport = htons(nport);
-                                
-                                //DBGPRINT(("==> New Source port: %d\n", ntohs(embed_th->sport) ));
-                                //DBGPRINT(("==> New checksum: %02x\n", embed_th->checksum ));
-                            }
-                            else if( embed_ip6h->nexthdr == IP_UDP )
-                            {
-                                embed_uh = (UDP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER) + sizeof(IP6_HEADER));
-                                
-                                //DBGPRINT(("==> Source port: %d\n", ntohs(embed_uh->sport) ));
-                                //DBGPRINT(("==> Old Dest port: %d\n", ntohs(embed_uh->dport) ));
-                                nport = get_in_map_port( ntohs(embed_uh->sport) );
-                                
-                                if (nport == 0) {
-                                    DBGPRINT(("==> PtReceivePacket: Find map failed! Drop!\n"));
-                                    Status = NDIS_STATUS_NOT_ACCEPTED;
-                                    NdisFreeMemory(pPacketContent, 0, 0);
-                                    NdisDprFreePacket(MyPacket);
-                                    return 0;
-                                }
-                                                  
-                                embed_uh->checksum = checksum_adjust( ntohs(embed_uh->checksum), ntohs(embed_uh->sport), nport );
-                                embed_uh->sport = htons(nport);
-                                
-                                //DBGPRINT(("==> New Source port: %d\n", ntohs(embed_uh->sport) ));
-                                //DBGPRINT(("==> New checksum: %02x\n", embed_uh->checksum ));
-                            }
-                            else
-                            {
-                                DBGPRINT(("==> PtReceivePacket: Embedded header type unsupported! Drop!\n"));
-                                Status = NDIS_STATUS_NOT_ACCEPTED;
-                                NdisFreeMemory(pPacketContent, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
-                            }
-                        }
-                    }
-                    *
-                    */
-                    
                     /*else
                     {
                         DBGPRINT(("==> PtReceivePacket: Unkown ICMPv6 type, drop packet.\n"));
@@ -1134,8 +777,7 @@ Return Value:
                         DBGPRINT(("==> PtReceivePacket: Non-translated TCPv6 port.\n"));
                         //DBGPRINT(("==> Source port: %d\n", ntohs(th->sport)));
                         //DBGPRINT(("==> Old Dest port: %d\n", ntohs(th->dport)));
-                        size = ntohs(ip6h->payload);
-                        nport = GetTcpPortMapIn(th, size);
+                        nport = GetTcpPortMapIn(th, ntohs(ip6h->payload));
                         
                         if (nport == 0)
                         {

@@ -10,8 +10,8 @@
  *
  */
 
-#ifndef _IOCONTROL_H
-#define _IOCONTROL_H
+#ifndef _IOCONTROL_H_
+#define _IOCONTROL_H_
 
 NTSTATUS
 DevIoControl(
@@ -19,4 +19,4 @@ DevIoControl(
     IN PIRP              pIrp
     );
 
-#endif // _IOCONTROL_H
+#endif // _IOCONTROL_H_

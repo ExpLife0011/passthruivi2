@@ -1,5 +1,5 @@
-#ifndef _PORTMAP_TCP_H
-#define _PORTMAP_TCP_H
+#ifndef _PORTMAP_TCP_H_
+#define _PORTMAP_TCP_H_
 
 // Timer consts
 #define SECS   * 1E7    // Equals to 1 sec in LARGE_INTEGER.
@@ -100,8 +100,8 @@ typedef struct _TCP_STATE_CONTEXT
     // Indexes pointing back to port hash table
     USHORT            OriginalPort;   // Index for TCP_PORT_MAP_OUT, recording local port
     USHORT            MappedPort;     // Index for TCP_PORT_MAP_IN, recording mapped port
-    // TRUE for 4to6 map; FALSE for 6to6 map.
-    BOOLEAN           Translated;
+    BOOLEAN           Translated;     // TRUE for 4to6 map; FALSE for 6to6 map.
+    
     // TCP state info
     TCP_STATE_INFO    Seen[PACKET_DIR_MAX];     // Seen[0] for local state, Seen[1] for remote state
     LARGE_INTEGER     StateSetTime;    // The time when the current state is set
@@ -117,7 +117,7 @@ typedef struct _TCP_STATE_CONTEXT
     ULONG             LastEnd;
 } TCP_STATE_CONTEXT, *PTCP_STATE_CONTEXT;
 
-// Hash table for TCP port from original port to mapping port
+// Hash table entry for TCP port
 typedef struct _TCP_PORT_MAP
 {
     // Pointer to TCP state context structure
@@ -180,4 +180,4 @@ GetTcpPortMapIn(
     IN ULONG          len
     );
 
-#endif // _PORTMAP_TCP_H
+#endif // _PORTMAP_TCP_H_
