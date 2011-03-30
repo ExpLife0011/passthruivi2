@@ -1285,7 +1285,6 @@ Routine Description:
 }
 
 
-
 USHORT
 GetTcpPortMapOut(
     IN PTCP_HEADER     th,

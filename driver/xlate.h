@@ -11,15 +11,7 @@ extern UINT     enable_xlate;
 extern UINT     xlate_mode;
 
 
-BOOLEAN
-CharArrayEqual(
-    IN PUCHAR array1, 
-    IN PUCHAR array2, 
-    IN INT len
-    );
-
-
-BOOLEAN
+ULONG
 IsIviAddress(
     IN PUCHAR addr
     );
@@ -33,8 +25,24 @@ VOID ip6to4(IP6_HEADER *ip6h, IP_HEADER *ih);
 UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
 UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
-UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
+
+
+UINT
+Icmp6to4(
+    IN PUCHAR IPv6Packet, 
+    IN PUCHAR IPv4Packet, 
+    IN USHORT OldId
+    );
+
+
 UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
-UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
+
+
+UINT Udp6to4(
+    PUCHAR pPacket, 
+    PUCHAR pNewPacket, 
+    USHORT OldPort
+    );
+
 
 #endif // _XLATE_H

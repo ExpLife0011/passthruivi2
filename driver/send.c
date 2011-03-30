@@ -36,12 +36,9 @@ Return Value:
     PUCHAR            pPacketContent;
     PUCHAR            pTemp;
     PUCHAR            pNewPacketContent;
-    UINT              PacketLength;
-    PUCHAR            pBuf;
-    UINT              BufLength;
-    PMDL              pNext;
-    UINT              j; //XXX: j, NOT i!
-    PNDIS_BUFFER      tempBuffer, MyBuffer;
+    UINT              BufferLength, PacketLength;
+    UINT              ContentOffset = 0;
+    PNDIS_BUFFER      TempBuffer, MyBuffer;
 
     // NAT defined
     ETH_HEADER      *eh;
@@ -52,7 +49,7 @@ Return Value:
     ICMP6_HEADER    *icmp6h;
     TCP_HEADER      *th;
     UDP_HEADER      *uh;
-    USHORT           nport = 0;
+    USHORT           mapped = 0;
     USHORT           tempMod, tempRes;
     BOOLEAN          ret;
     UINT             packet_size     = 0; // bytes need to be sent in the buffer
@@ -111,8 +108,16 @@ Return Value:
                 SendRsvd = (PSEND_RSVD)(MyPacket->ProtocolReserved);
                 SendRsvd->OriginalPkt = Packet;
 
-                // Allocate memory to copy packet content
-                NdisQueryPacketLength(Packet, &PacketLength);
+                // Query first buffer and total packet length
+                NdisGetFirstBufferFromPacketSafe(Packet, &MyBuffer, &pTemp, &BufferLength, &PacketLength, NormalPagePriority);
+                if (pTemp == NULL)
+                {
+                    DBGPRINT(("==> MPSendPackets: NdisGetFirstBufferFromPacketSafe failed.\n"));
+                    Status = NDIS_STATUS_FAILURE;
+                    NdisFreePacket(MyPacket);
+                    break;
+                }
+                
                 // Check packet size
                 if (PacketLength + IVI_PACKET_OVERHEAD > 1514)
                 {
@@ -122,6 +127,8 @@ Return Value:
                     NdisFreePacket(MyPacket);
                     break;
                 }
+                
+                // Allocate memory
                 Status = NdisAllocateMemoryWithTag((PVOID)&pPacketContent, PacketLength, TAG);
                 if (Status != NDIS_STATUS_SUCCESS)
                 {
@@ -131,24 +138,17 @@ Return Value:
                     break;
                 }
                 NdisZeroMemory(pPacketContent, PacketLength);
-                NdisQueryBufferSafe(Packet->Private.Head, &pBuf, &BufLength, NormalPagePriority);
-                NdisMoveMemory(pPacketContent, pBuf, BufLength);
-                j = BufLength;
-                pNext = Packet->Private.Head;
-                for(;;)
+                
+                // Copy packet content from buffer
+                NdisMoveMemory(pPacketContent, pTemp, BufferLength);
+                ContentOffset = BufferLength;
+                NdisGetNextBuffer(MyBuffer, &MyBuffer);
+                while (MyBuffer != NULL)
                 {
-                    if (pNext == Packet->Private.Tail)
-                    {
-                        break;
-                    }
-                    pNext = pNext->Next;
-                    if (pNext == NULL)
-                    {
-                        break;
-                    }
-                    NdisQueryBufferSafe(pNext, &pBuf, &BufLength, NormalPagePriority);
-                    NdisMoveMemory(pPacketContent+j, pBuf, BufLength);
-                    j += BufLength;
+                    NdisQueryBufferSafe(MyBuffer, &pTemp, &BufferLength, NormalPagePriority);
+                    NdisMoveMemory(pPacketContent + ContentOffset, pTemp, BufferLength);
+                    ContentOffset += BufferLength;
+                    NdisGetNextBuffer(MyBuffer, &MyBuffer);
                 }
                 //DBGPRINT(("==> MPSendPackets: Get packet content success.\n"));
                 
@@ -164,8 +164,6 @@ Return Value:
                         // ipv4 packet
                         //DBGPRINT(("==> MPSendPackets: We send an IPv4 packet.\n"));
                         ih = (IP_HEADER *)(pPacketContent + sizeof(ETH_HEADER));
-                        
-                        DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
                         
                         if (ih->protocol == IP_ICMP)
                         {
@@ -184,7 +182,7 @@ Return Value:
                                     NdisFreePacket(MyPacket);
                                     break;
                                 }
-                                //j += 20; // New: we use packet_size now!
+                                
                                 NdisZeroMemory(pNewPacketContent, PacketLength + IVI_PACKET_OVERHEAD);
                                 
                                 packet_size = icmp4to6(pPacketContent, pNewPacketContent);
@@ -231,7 +229,7 @@ Return Value:
                                 NdisFreePacket(MyPacket);
                                 break;
                             }
-                            //j += 20; // New: we use packet_size now!
+                            
                             NdisZeroMemory(pNewPacketContent, PacketLength + IVI_PACKET_OVERHEAD);
                             
                             packet_size = tcp4to6(pPacketContent, pNewPacketContent);
@@ -270,7 +268,7 @@ Return Value:
                                 NdisFreePacket(MyPacket);
                                 break;
                             }
-                            //j += 20; // New: we use packet_size now!
+                            
                             NdisZeroMemory(pNewPacketContent, PacketLength + IVI_PACKET_OVERHEAD);
                             
                             packet_size = udp4to6(pPacketContent, pNewPacketContent);
@@ -336,13 +334,13 @@ Return Value:
                                           Packet,
                                           Status); 
                         
-                        if (CharArrayEqual(ah->sip, ah->dip, 4))
+                        if (NdisEqualMemory(ah->sip, ah->dip, 4) == 1)
                         {
                             // Gratuitous ARP from local TCP/IP stack. Drop.
-                            DBGPRINT(("==> MPSendPackets: Gratuitous ARP request. Indicate send success and drop packet.\n"));
+                            //DBGPRINT(("==> MPSendPackets: Gratuitous ARP request. Indicate send success and drop packet.\n"));
                             NdisFreeMemory(pPacketContent, 0, 0);
                             NdisFreePacket(MyPacket);
-                            DBGPRINT(("==> MPReturnPacket: MyPacket is freed!\n"));
+                            //DBGPRINT(("==> MPReturnPacket: MyPacket is freed!\n"));
                         }
                         else
                         {
@@ -394,20 +392,19 @@ Return Value:
                             NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
                             while (MyBuffer != NULL)
                             {
-                                NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufLength, NormalPagePriority);
+                                NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufferLength, NormalPagePriority);
                                 if (pPacketContent != NULL)
                                 {
-                                    NdisFreeMemory(pPacketContent, BufLength, 0);
+                                    NdisFreeMemory(pPacketContent, BufferLength, 0);
                                 }
-                                tempBuffer = MyBuffer;
-                                NdisGetNextBuffer(tempBuffer, &MyBuffer);
-                                NdisFreeBuffer(tempBuffer);
-                                DBGPRINT(("==> MPSendPackets: pPacketContent and MyBuffer are freed for ARP.\n"));
+                                TempBuffer = MyBuffer;
+                                NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                                NdisFreeBuffer(TempBuffer);
+                                //DBGPRINT(("==> MPSendPackets: pPacketContent and MyBuffer are freed for ARP.\n"));
                             }
                              
                             NdisFreePacket(MyPacket);
-                            
-                            DBGPRINT(("==> MPSendPackets: MyPacket is freed for ARP.\n"));
+                            //DBGPRINT(("==> MPSendPackets: MyPacket is freed for ARP.\n"));
                         }
                         
                         return;
@@ -428,7 +425,7 @@ Return Value:
                     
                     //DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
                     
-                    if (IsIviAddress(ip6h->saddr))
+                    if (IsIviAddress(ip6h->saddr) == 1)
                     {
                         if (ip6h->nexthdr == IP_TCP)
                         {
@@ -440,9 +437,9 @@ Return Value:
                             //DBGPRINT(("==> Old Source port: %d\n", ntohs(th->sport)));
                             //DBGPRINT(("==> Dest port: %d\n", ntohs(th->dport)));
                             size = ntohs(ip6h->payload);
-                            nport = GetTcpPortMapOut(th, size, FALSE);
+                            mapped = GetTcpPortMapOut(th, size, FALSE);
                             
-                            if (nport == 0)
+                            if (mapped == 0)
                             {
                                 DBGPRINT(("==> MPSendPackets: Find map failed. Drop.\n"));
                                 Status = NDIS_STATUS_FAILURE;
@@ -451,10 +448,10 @@ Return Value:
                                 break;
                             }
                             
-                            th->checksum = checksum_adjust(ntohs(th->checksum), ntohs(th->sport), nport);;
-                            th->sport = htons(nport);
+                            th->checksum = checksum_adjust(ntohs(th->checksum), ntohs(th->sport), mapped);;
+                            th->sport = htons(mapped);
                             
-                            //DBGPRINT(("==> New Source port: %d\n", nport));
+                            //DBGPRINT(("==> New Source port: %d\n", mapped));
                             //DBGPRINT(("==> New checksum: %02x\n", th->checksum));
                         }
                         else if (ip6h->nexthdr == IP_UDP)
@@ -467,7 +464,7 @@ Return Value:
                             //DBGPRINT(("==> Old Source port: %d\n", ntohs(uh->sport)));
                             //DBGPRINT(("==> Dest port: %d\n", ntohs(uh->dport)));
                             
-                            ret = GetUdpPortMapOut(ntohs(uh->sport), FALSE, &nport);
+                            ret = GetUdpPortMapOut(ntohs(uh->sport), FALSE, &mapped);
                             
                             if (ret != TRUE)
                             {
@@ -478,10 +475,10 @@ Return Value:
                                 break;
                             }
                             
-                            uh->checksum = checksum_adjust(ntohs(uh->checksum), ntohs(uh->sport), nport);;
-                            uh->sport = htons(nport);
+                            uh->checksum = checksum_adjust(ntohs(uh->checksum), ntohs(uh->sport), mapped);;
+                            uh->sport = htons(mapped);
                             
-                            //DBGPRINT(("==> New Source port: %d\n", nport));
+                            //DBGPRINT(("==> New Source port: %d\n", mapped));
                             //DBGPRINT(("==> New checksum: %02x\n", uh->checksum));
                         }
                         else if (ip6h->nexthdr == IP_ICMP6)
@@ -495,8 +492,7 @@ Return Value:
                             {
                                 //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
                                 
-                                // We use nport here to avoid adding new variable
-                                ret = GetIcmpIdMapOut(ntohs(icmp6h->id), FALSE, &nport);
+                                ret = GetIcmpIdMapOut(ntohs(icmp6h->id), FALSE, &mapped);
                                 
                                 if (ret != TRUE)
                                 {
@@ -507,10 +503,10 @@ Return Value:
                                     break;
                                 }
                                 
-                                icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), nport);;
-                                icmp6h->id = htons(nport);
+                                icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), mapped);;
+                                icmp6h->id = htons(mapped);
                                 
-                                //DBGPRINT(("==> New id: %d\n", nport));
+                                //DBGPRINT(("==> New id: %d\n", mapped));
                                 //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
                             }
                         }
@@ -583,14 +579,14 @@ Return Value:
                     NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
                     while (MyBuffer != NULL)
                     {
-                        NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufLength, NormalPagePriority);
+                        NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufferLength, NormalPagePriority);
                         if (pPacketContent != NULL)
                         {
-                            NdisFreeMemory(pPacketContent, BufLength, 0);
+                            NdisFreeMemory(pPacketContent, BufferLength, 0);
                         }
-                        tempBuffer = MyBuffer;
-                        NdisGetNextBuffer(tempBuffer, &MyBuffer);
-                        NdisFreeBuffer(tempBuffer);
+                        TempBuffer = MyBuffer;
+                        NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                        NdisFreeBuffer(TempBuffer);
                         DBGPRINT(("==> MPSendPackets: pPacketContent and MyBuffer freed.\n"));
                     }
                      

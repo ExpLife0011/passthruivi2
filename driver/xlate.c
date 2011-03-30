@@ -20,47 +20,7 @@ UINT    enable_xlate    = 1;  /* default to 1 */
 UINT    xlate_mode      = 0;  /* default to 1 */
 
 
-BOOLEAN
-CharArrayEqual(
-    IN PUCHAR array1, 
-    IN PUCHAR array2, 
-    IN INT len
-    )
-/*++
-
-Routine Description:
-
-    Compare two char arrays of the same length.
-    
-Arguments:
-
-    array1 - Input byte array 1
-    array2 - Input byte array 2
-    len - Length of bytes need to compare in two arrays
-
-Return Value:
-
-    TRUE if two array contains same bytes in the first 'len' bytes; otherwise return FALSE.
-
---*/
-{
-    INT i;
-    BOOLEAN ret = TRUE; // Set to true at first
-
-    for (i = 0; i < len; i++)
-    {
-        if (array1[i] != array2[i])
-        {
-            // Any differences will result a false return
-            ret = FALSE;
-            break;
-        }
-    }
-    return ret;
-}
-
-
-BOOLEAN
+ULONG
 IsIviAddress(
     IN PUCHAR addr
     )
@@ -76,11 +36,11 @@ Arguments:
 
 Return Value:
 
-    TRUE if the address is IVI format; otherwise return FALSE.
+    1 if the address is IVI format; otherwise return 0.
 
 --*/
 {
-    return CharArrayEqual(addr, prefix, prefix_length / 8);
+    return NdisEqualMemory(addr, prefix, prefix_length / 8);
 }
 
 //
@@ -137,7 +97,7 @@ VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h)
 //
 VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr)
 {
-    if (IsIviAddress(ip6_addr))
+    if (IsIviAddress(ip6_addr) == 1)
     {
         NdisMoveMemory(ip_addr, ip6_addr + (prefix_length / 8), 4);
     }
@@ -363,7 +323,29 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
 // Translate IPv6 ICMP packet into IPv4 ICMP packet, 
 // return packet_size on success, return 0 if failed
 //
-UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
+UINT
+Icmp6to4(
+    IN PUCHAR IPv6Packet, 
+    IN PUCHAR IPv4Packet, 
+    IN USHORT OldId
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 ICMP packet into IPv4 ICMP packet.
+    
+Arguments:
+
+    IPv6Packet - Pointer to IPv6 packet memory, cannot be NULL
+    IPv4Packet - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
+    OldId - Original id pre-fetched by caller in receive handles
+
+Return Value:
+
+    Length of newly generated packet stored in IPv4Packet buffer
+
+--*/
 {
     ETH_HEADER   *eh;
     IP6_HEADER   *ip6h;
@@ -375,17 +357,15 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     PUCHAR        data;
     PUCHAR        data_new;
     INT           data_size;
-    USHORT        old_id;
     BOOLEAN       ret, trans;
-    UINT          packet_size = 0;   // bytes need to be sent
     
     // Point headers
-    eh     = (ETH_HEADER   *)(pPacket);
-    ip6h   = (IP6_HEADER   *)(pPacket + sizeof(ETH_HEADER));
-    icmp6h = (ICMP6_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    eh_4   = (ETH_HEADER   *)(pNewPacket);
-    ih     = (IP_HEADER    *)(pNewPacket + sizeof(ETH_HEADER));
-    icmph  = (ICMP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    eh     = (ETH_HEADER   *)(IPv6Packet);
+    ip6h   = (IP6_HEADER   *)(IPv6Packet + sizeof(ETH_HEADER));
+    icmp6h = (ICMP6_HEADER *)(IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    eh_4   = (ETH_HEADER   *)(IPv4Packet);
+    ih     = (IP_HEADER    *)(IPv4Packet + sizeof(ETH_HEADER));
+    icmph  = (ICMP_HEADER  *)(IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -403,29 +383,19 @@ UINT icmp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     icmph->id = icmp6h->id;
     icmph->sequence = icmp6h->sequence;
     
-    // Port mapping
-    ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &old_id, &trans);
-    if (ret != TRUE || trans != TRUE)
-    {
-        DBGPRINT(("==> icmp6to4: find map failed.\n"));
-        return 0;
-    }
-    icmph->id = htons(old_id);
+    // Id mapping using pre-fetched original id
+    icmph->id = htons(OldId);
     
     // Copy data
-    data       = pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
-    data_new   = pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
+    data       = IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
+    data_new   = IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
     data_size  = ntohs(ip6h->payload) - sizeof(ICMP6_HEADER);
     NdisMoveMemory(data_new, data, data_size);
     
     checksum_icmp4(ih, icmph);
-
-    // Done
     
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
 //
@@ -485,11 +455,30 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     return packet_size;
 }
 
-//
-// Translate IPv6 UDP packet into IPv4 UDP packet,
-// return packet_size on success, return 0 if failed
-//
-UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
+
+UINT
+Udp6to4(
+    PUCHAR IPv6Packet, 
+    PUCHAR IPv4Packet, 
+    USHORT OldPort
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 UDP packet into IPv4 UDP packet.
+    
+Arguments:
+
+    IPv6Packet - Pointer to IPv6 packet memory, cannot be NULL
+    IPv4Packet - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
+    OldPort - Original port pre-fetched by caller in receive handles
+
+Return Value:
+
+    Length of newly generated packet stored in IPv4Packet buffer
+
+--*/
 {
     ETH_HEADER   *eh;
     IP6_HEADER   *ip6h;
@@ -499,17 +488,16 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     UDP_HEADER   *uh_4;
     
     INT           size;
-    USHORT        oldport;
     BOOLEAN       ret, trans;
     UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
-    eh     = (ETH_HEADER  *)(pPacket);
-    ip6h   = (IP6_HEADER  *)(pPacket + sizeof(ETH_HEADER));
-    uh     = (UDP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    eh_4   = (ETH_HEADER  *)(pNewPacket);
-    ih     = (IP_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
-    uh_4   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    eh     = (ETH_HEADER  *)(IPv6Packet);
+    ip6h   = (IP6_HEADER  *)(IPv6Packet + sizeof(ETH_HEADER));
+    uh     = (UDP_HEADER  *)(IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    eh_4   = (ETH_HEADER  *)(IPv4Packet);
+    ih     = (IP_HEADER   *)(IPv4Packet + sizeof(ETH_HEADER));
+    uh_4   = (UDP_HEADER  *)(IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -523,22 +511,12 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     size = ntohs(ip6h->payload);
     NdisMoveMemory(uh_4, uh, size);
     
-    // Port mapping
-    ret = GetUdpPortMapIn(ntohs(uh->dport), &oldport, &trans);
-    if (ret != TRUE || trans != TRUE)
-    {
-        DBGPRINT(("==> udp6to4: find map failed.\n"));
-        return 0;
-    }
-    uh_4->dport = htons(oldport);
+    // Port mapping using pre-fetched original port
+    uh_4->dport = htons(OldPort);
     
     checksum_udp4(ih, uh_4);
-
-    // Done
     
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
