@@ -20,51 +20,67 @@ UINT    enable_xlate    = 1;  /* default to 1 */
 UINT    xlate_mode      = 0;  /* default to 1 */
 
 
-//
-// Compare two char arrays of the same length
-//
-INT char_array_equal(PUCHAR array1, PUCHAR array2, INT len)
+BOOLEAN
+CharArrayEqual(
+    IN PUCHAR array1, 
+    IN PUCHAR array2, 
+    IN INT len
+    )
+/*++
+
+Routine Description:
+
+    Compare two char arrays of the same length.
+    
+Arguments:
+
+    array1 - Input byte array 1
+    array2 - Input byte array 2
+    len - Length of bytes need to compare in two arrays
+
+Return Value:
+
+    TRUE if two array contains same bytes in the first 'len' bytes; otherwise return FALSE.
+
+--*/
 {
     INT i;
-    INT ret = 1; // Set to true at first
+    BOOLEAN ret = TRUE; // Set to true at first
 
     for (i = 0; i < len; i++)
     {
         if (array1[i] != array2[i])
         {
             // Any differences will result a false return
-            ret = 0;
+            ret = FALSE;
             break;
         }
     }
     return ret;
 }
 
-//
-// Check IVI address format
-//
-INT is_ivi_address(PUCHAR addr)
+
+BOOLEAN
+IsIviAddress(
+    IN PUCHAR addr
+    )
+/*++
+
+Routine Description:
+
+    Check IVI address format.
+    
+Arguments:
+
+    addr - Pointer to array that contains an IPv6 address
+
+Return Value:
+
+    TRUE if the address is IVI format; otherwise return FALSE.
+
+--*/
 {
-    INT ret = 0;
-    //UCHAR mask = 0x00;
-    //UINT prefixLengthR = prefix_length % 8;  // usually should be zero
-    UINT prefixLengthN = prefix_length / 8;
-    
-    ret = char_array_equal(addr, prefix, prefixLengthN);
-    
-    /*
-     * We don't support prefix length which cannot be divided by 8!
-     *
-    if (ret == 1 && prefixLengthR != 0)
-    {
-        // compare remaining bits
-        mask = 0xFF << (8-prefixLengthR);
-        ret = (addr[prefixLengthN] & mask) == (prefix[prefixLengthN] & mask);
-    }
-     *
-     */
-    
-    return ret;
+    return CharArrayEqual(addr, prefix, prefix_length / 8);
 }
 
 //
@@ -121,11 +137,7 @@ VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h)
 //
 VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr)
 {
-    /*
-     * We don't support prefix length which is not multiple of 8 currently!
-     *
-     */
-    if (is_ivi_address(ip6_addr))
+    if (IsIviAddress(ip6_addr))
     {
         NdisMoveMemory(ip_addr, ip6_addr + (prefix_length / 8), 4);
     }
@@ -431,6 +443,7 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     
     INT           size;
     USHORT        newport;
+    BOOLEAN       ret;
     UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
@@ -454,8 +467,8 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     NdisMoveMemory(uh_6, uh, size);
     
     // Port mapping
-    newport = get_out_map_port(ntohs(uh->sport), 1);
-    if (newport == 0)
+    ret = GetUdpPortMapOut(ntohs(uh->sport), TRUE, &newport);
+    if (ret == FALSE)
     {
         DBGPRINT(("==> udp4to6: find map failed.\n"));
         return 0;
@@ -487,6 +500,7 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     
     INT           size;
     USHORT        oldport;
+    BOOLEAN       ret, trans;
     UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
@@ -510,8 +524,8 @@ UINT udp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     NdisMoveMemory(uh_4, uh, size);
     
     // Port mapping
-    oldport = get_in_map_port(ntohs(uh->dport));
-    if (oldport == 0)
+    ret = GetUdpPortMapIn(ntohs(uh->dport), &oldport, &trans);
+    if (ret != TRUE || trans != TRUE)
     {
         DBGPRINT(("==> udp6to4: find map failed.\n"));
         return 0;

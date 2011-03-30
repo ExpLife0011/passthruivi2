@@ -1,12 +1,79 @@
 #ifndef _PORTMAP_H_
 #define _PORTMAP_H_
 
-INT is_time_out(PLARGE_INTEGER newtime, PLARGE_INTEGER oldtime);
+typedef struct _UDP_MAP_CONTEXT
+{
+    LIST_ENTRY        ListEntry;    // Linked to ICMP map list
+    // Indexes pointing back to id hash table
+    USHORT            OriginalPort;   // Index for UdpPortMapOutTable, recording local port
+    USHORT            MappedPort;     // Index for UdpPortMapInTable, recording mapped port
+    LARGE_INTEGER     MapSetTime;   // The time when the current map is set
+    BOOLEAN           Translated;   // TRUE for 4to6 map; FALSE for 6to6 map.
+} UDP_MAP_CONTEXT, *PUDP_MAP_CONTEXT;
 
-// Port map operations
-VOID refresh_port_list();
-USHORT get_out_map_port(USHORT oldp, USHORT translate);
-USHORT get_in_map_port(USHORT newp);
+// Hash table entry for UDP port map
+typedef struct _UDP_PORT_MAP
+{
+    // Pointer to UDP port map context structure
+    PUDP_MAP_CONTEXT    Map;
+} UDP_PORT_MAP, *PUDP_PORT_MAP;
+
+
+extern LARGE_INTEGER     UdpTimeOut;
+
+extern LIST_ENTRY        PortListHead;
+extern LONG              PortListLength;
+extern USHORT            LastAllocatedUdpPort;
+extern NDIS_SPIN_LOCK    PortListLock;
+
+extern UDP_PORT_MAP       UdpPortMapOutTable[65536];
+extern UDP_PORT_MAP       UdpPortMapInTable[65536];
+
+
+VOID
+InitUdpLists(
+    VOID
+    );
+
+
+VOID
+ResetUdpListsSafe(
+    VOID
+    );
+
+
+VOID
+ResetUdpLists(
+    VOID
+    );
+
+
+VOID
+RefreshUdpListEntrySafe(
+    VOID
+    );
+
+
+VOID
+RefreshUdpListEntry(
+    VOID
+    );
+
+
+BOOLEAN
+GetUdpPortMapOut(
+    IN   USHORT   original,
+    IN   BOOLEAN  trans,
+    OUT  PUSHORT  mapped
+    );
+
+
+BOOLEAN
+GetUdpPortMapIn(
+    IN  USHORT    mapped,
+    OUT PUSHORT   original,
+    OUT PBOOLEAN  trans
+    );
 
 
 #endif // _PORTMAP_H_

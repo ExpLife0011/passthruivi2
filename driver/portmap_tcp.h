@@ -98,8 +98,8 @@ typedef struct _TCP_STATE_CONTEXT
 {
     LIST_ENTRY        ListEntry;      // Linked to TCP state list
     // Indexes pointing back to port hash table
-    USHORT            OriginalPort;   // Index for TCP_PORT_MAP_OUT, recording local port
-    USHORT            MappedPort;     // Index for TCP_PORT_MAP_IN, recording mapped port
+    USHORT            OriginalPort;   // Index for TcpPortMapOutTable, recording local port
+    USHORT            MappedPort;     // Index for TcpPortMapInTable, recording mapped port
     BOOLEAN           Translated;     // TRUE for 4to6 map; FALSE for 6to6 map.
     
     // TCP state info
@@ -117,7 +117,7 @@ typedef struct _TCP_STATE_CONTEXT
     ULONG             LastEnd;
 } TCP_STATE_CONTEXT, *PTCP_STATE_CONTEXT;
 
-// Hash table entry for TCP port
+// Hash table entry for TCP port map
 typedef struct _TCP_PORT_MAP
 {
     // Pointer to TCP state context structure

@@ -925,13 +925,13 @@ Return Value:
                     NdisFreeMemory(pPacketContent, BufLength, 0);
                 }
                 NdisFreeBuffer(MyBuffer);
-                DBGPRINT(("==> PtSendComplete: pPacketContent and MyBuffer freed.\n"));
+                //DBGPRINT(("==> PtSendComplete: pPacketContent and MyBuffer freed.\n"));
             }
       	}
 
         
       	NdisDprFreePacket(Packet);
-        DBGPRINT(("==> PtSendComplete: Packet freed.\n"));
+        //DBGPRINT(("==> PtSendComplete: Packet freed.\n"));
 
         NdisMSendComplete(pAdapt->MiniportHandle,
                                  Pkt,

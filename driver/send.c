@@ -258,7 +258,7 @@ Return Value:
                         {
                             // UDPv4 packet
                             DBGPRINT(("==> MPSendPackets: We send a UDPv4 packet.\n"));
-                            /*
+                            
                             uh = (UDP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
                             
                             Status = NdisAllocateMemoryWithTag((PVOID)&pNewPacketContent, PacketLength + IVI_PACKET_OVERHEAD, TAG);
@@ -291,7 +291,6 @@ Return Value:
                             pNewPacketContent = pTemp;
                             NdisFreeMemory(pNewPacketContent, 0, 0);
                             //DBGPRINT(("==> MPSendPackets: old packet memory freed.\n"));
-                            */
                         }
                         else
                         {
@@ -337,9 +336,9 @@ Return Value:
                                           Packet,
                                           Status); 
                         
-                        if (1 == char_array_equal(ah->sip, ah->dip, 4))
+                        if (CharArrayEqual(ah->sip, ah->dip, 4))
                         {
-                            // Gratuitous ARP from local stack. Drop.
+                            // Gratuitous ARP from local TCP/IP stack. Drop.
                             DBGPRINT(("==> MPSendPackets: Gratuitous ARP request. Indicate send success and drop packet.\n"));
                             NdisFreeMemory(pPacketContent, 0, 0);
                             NdisFreePacket(MyPacket);
@@ -429,7 +428,7 @@ Return Value:
                     
                     //DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
                     
-                    if (is_ivi_address(ip6h->saddr) != 0)
+                    if (IsIviAddress(ip6h->saddr))
                     {
                         if (ip6h->nexthdr == IP_TCP)
                         {
@@ -458,7 +457,6 @@ Return Value:
                             //DBGPRINT(("==> New Source port: %d\n", nport));
                             //DBGPRINT(("==> New checksum: %02x\n", th->checksum));
                         }
-                        /*
                         else if (ip6h->nexthdr == IP_UDP)
                         {
                             // udpv6 packet
@@ -469,9 +467,9 @@ Return Value:
                             //DBGPRINT(("==> Old Source port: %d\n", ntohs(uh->sport)));
                             //DBGPRINT(("==> Dest port: %d\n", ntohs(uh->dport)));
                             
-                            nport = get_out_map_port(ntohs(uh->sport), 0);
+                            ret = GetUdpPortMapOut(ntohs(uh->sport), FALSE, &nport);
                             
-                            if (nport == 0)
+                            if (ret != TRUE)
                             {
                                 DBGPRINT(("==> MPSendPackets: Find map failed. Drop.\n"));
                                 Status = NDIS_STATUS_FAILURE;
@@ -486,7 +484,6 @@ Return Value:
                             //DBGPRINT(("==> New Source port: %d\n", nport));
                             //DBGPRINT(("==> New checksum: %02x\n", uh->checksum));
                         }
-                        */
                         else if (ip6h->nexthdr == IP_ICMP6)
                         {
                             // icmpv6 packet

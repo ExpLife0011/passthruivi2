@@ -40,7 +40,6 @@ Routine Description:
 }
 
 
-
 VOID
 ResetIcmpListsSafe(
     VOID
@@ -72,7 +71,7 @@ Routine Description:
         PICMP_MAP_CONTEXT Map = CONTAINING_RECORD(p, ICMP_MAP_CONTEXT, ListEntry);
         
         // Release ID mapping info and reset corresponding hash table entry
-        DBGPRINT(("==> ResetIcmpListsSafe: Id map %d -> %d removed.\n", 
+        DBGPRINT(("==> ResetIcmpListsSafe: map %d -> %d removed.\n", 
                   Map->OriginalId, Map->MappedId));
         // Protect the loop from break
         temp = p;
@@ -84,7 +83,7 @@ Routine Description:
         RemoveEntryList(temp);
         IdListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetIcmpListsSafe: Id map context memory freed.\n"));
+        DBGPRINT(("==> ResetIcmpListsSafe: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -125,8 +124,8 @@ Routine Description:
     {
         PICMP_MAP_CONTEXT Map = CONTAINING_RECORD(p, ICMP_MAP_CONTEXT, ListEntry);
         
-        // Release ID mapping info and reset corresponding hash table entry
-        DBGPRINT(("==> ResetIcmpLists: Id map %d -> %d removed.\n", 
+        // Release mapping info and reset corresponding hash table entry
+        DBGPRINT(("==> ResetIcmpLists: map %d -> %d removed.\n", 
                   Map->OriginalId, Map->MappedId));
         // Protect the loop from break
         temp = p;
@@ -138,7 +137,7 @@ Routine Description:
         RemoveEntryList(temp);
         IdListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetIcmpLists: Id map context memory freed.\n"));
+        DBGPRINT(("==> ResetIcmpLists: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -185,7 +184,7 @@ Routine Description:
         if (IsTimeOut(&now, &(Map->MapSetTime), &IcmpTimeOut))
         {
             // Time out. Release mapping info and reset corresponding hash table entry
-            DBGPRINT(("==> RefreshIcmpListEntry: Id map %d -> %d time out. Delete.\n", 
+            DBGPRINT(("==> RefreshIcmpListEntrySafe: map %d -> %d time out. Delete.\n", 
                       Map->OriginalId, Map->MappedId));
             // Protect the loop from break
             temp = p;
@@ -197,7 +196,7 @@ Routine Description:
             RemoveEntryList(temp);
             IdListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshIcmpListEntry: Id map context memory freed.\n"));
+            DBGPRINT(("==> RefreshIcmpListEntrySafe: map context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -243,7 +242,7 @@ Routine Description:
         if (IsTimeOut(&now, &(Map->MapSetTime), &IcmpTimeOut))
         {
             // Time out. Release mapping info and reset corresponding hash table entry
-            DBGPRINT(("==> RefreshIcmpListEntry: Id map %d -> %d time out. Delete.\n", 
+            DBGPRINT(("==> RefreshIcmpListEntry: map %d -> %d time out. Delete.\n", 
                       Map->OriginalId, Map->MappedId));
             // Protect the loop from break
             temp = p;
@@ -255,7 +254,7 @@ Routine Description:
             RemoveEntryList(temp);
             IdListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshIcmpListEntry: Id map context memory freed.\n"));
+            DBGPRINT(("==> RefreshIcmpListEntry: map context memory freed.\n"));
             // Go to next entry
         }
         else

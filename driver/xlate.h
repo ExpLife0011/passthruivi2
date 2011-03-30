@@ -11,9 +11,20 @@ extern UINT     enable_xlate;
 extern UINT     xlate_mode;
 
 
-// IVI map functions
-INT char_array_equal(PUCHAR array1, PUCHAR array2, INT len);
-INT is_ivi_address(PUCHAR addr);
+BOOLEAN
+CharArrayEqual(
+    IN PUCHAR array1, 
+    IN PUCHAR array2, 
+    IN INT len
+    );
+
+
+BOOLEAN
+IsIviAddress(
+    IN PUCHAR addr
+    );
+
+
 VOID ip_addr4to6(PUCHAR ip_addr, PUCHAR ip6_addr, UINT localip);
 VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h);
 VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr);

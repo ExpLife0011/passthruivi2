@@ -768,12 +768,11 @@ Return Value:
             tempBuffer = MyBuffer;
             NdisGetNextBuffer(tempBuffer, &MyBuffer);
         	NdisFreeBuffer(tempBuffer);
-            DBGPRINT(("==> MPReturnPacket: pPacketContent and MyBuffer freed.\n"));
+            //DBGPRINT(("==> MPReturnPacket: pPacketContent and MyBuffer freed.\n"));
         }
         
         NdisFreePacket(Packet);
-        
-        DBGPRINT(("==> MPReturnPacket: Packet freed.\n"));
+        //DBGPRINT(("==> MPReturnPacket: Packet freed.\n"));
         
         NdisReturnPackets(&MyPacket, 1);
     }
