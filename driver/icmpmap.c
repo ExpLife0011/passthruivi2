@@ -283,7 +283,7 @@ Arguments:
 
     original - Original ICMP id in outflow packet
     trans - TRUE for 4to6 mapping; FLASE for 6to6 mapping
-    mapped - Pointer to caller-provided memory that holds the returned mapping id
+    mapped - Pointer to caller-supplied memory that holds the returned mapping id
 
 Return Value:
 
@@ -425,8 +425,8 @@ Routine Description:
 Arguments:
 
     mapped - Mapped ICMP id in incoming packet
-    original - Pointer to caller-provided memory that holds the returned original id, cannot be NULL
-    trans - Pointer to caller-provided memory that holds the translate flag for this mapping, cannot be NULL
+    original - Pointer to caller-supplied memory that holds the returned original id, cannot be NULL
+    trans - Pointer to caller-supplied memory that holds the translate flag for this mapping, cannot be NULL
 
 Return Value:
 

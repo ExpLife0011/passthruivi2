@@ -159,7 +159,7 @@ Return Value:
                     //DBGPRINT(("==> PtReceive: We receive an IPv6 packet.\n"));
                     ip6h = (IP6_HEADER *)(pPacketContent + sizeof(ETH_HEADER));
                                             
-                    if (IsIviAddress(ip6h->daddr) == 1)
+                    if (IsIviAddress(&(ip6h->daddr)) == 1)
                     {
                         if (ip6h->nexthdr == IP_ICMP6)
                         {
@@ -187,7 +187,7 @@ Return Value:
                                     DBGPRINT(("==> PtReceive: Non-translated ICMPv6 id.\n"));
                                     //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
                                     
-                                    icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
+                                    icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
                                     icmp6h->id = htons(original);
                                     
                                     //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
@@ -268,7 +268,7 @@ Return Value:
                                     return Status;
                                 }
                                                   
-                                th->checksum = checksum_adjust(ntohs(th->checksum), ntohs(th->dport), original);
+                                th->checksum = ChecksumUpdate(ntohs(th->checksum), ntohs(th->dport), original);
                                 th->dport = htons(original);
                                 
                                 //DBGPRINT(("==> New Dest port: %d\n", ntohs(th->dport)));
@@ -333,7 +333,7 @@ Return Value:
                                 //DBGPRINT(("==> Source port: %d\n", ntohs(uh->sport)));
                                 //DBGPRINT(("==> Old Dest port: %d\n", ntohs(uh->dport)));
                                 
-                                uh->checksum = checksum_adjust(ntohs(uh->checksum), ntohs(uh->dport), original);
+                                uh->checksum = ChecksumUpdate(ntohs(uh->checksum), ntohs(uh->dport), original);
                                 uh->dport = htons(original);
                                 
                                 //DBGPRINT(("==> New Dest port: %d\n", ntohs(th->dport)));
@@ -375,8 +375,7 @@ Return Value:
                         }
                     }
                 }
-
-                //DBGPRINT(("==> PtReceive: packet_size: %d, i: %d\n", packet_size, i ));
+                
                 NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->RecvBufferPoolHandle, pPacketContent, packet_size);
                 NdisChainBufferAtFront(MyPacket, MyBuffer);
                 
@@ -672,7 +671,7 @@ Return Value:
             //DBGPRINT(("==> PtReceivePacket: We receive an IPv6 packet.\n"));
             ip6h = (IP6_HEADER *)(pPacketContent + sizeof(ETH_HEADER));
             
-            if (IsIviAddress(ip6h->daddr) == 1)
+            if (IsIviAddress(&(ip6h->daddr)) == 1)
             {
                 if (ip6h->nexthdr == IP_ICMP6)
                 {
@@ -699,7 +698,7 @@ Return Value:
                             DBGPRINT(("==> PtReceivePacket: Non-translated ICMPv6 id.\n"));
                             //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
                             
-                            icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
+                            icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
                             icmp6h->id = htons(original);
                             
                             //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
@@ -776,7 +775,7 @@ Return Value:
                             return 0;
                         }
         
-                        th->checksum = checksum_adjust(ntohs(th->checksum), ntohs(th->dport), original);
+                        th->checksum = ChecksumUpdate(ntohs(th->checksum), ntohs(th->dport), original);
                         th->dport = htons(original);
                         
                         //DBGPRINT(("==> New Dest port: %d\n", ntohs(th->dport)));
@@ -839,7 +838,7 @@ Return Value:
                         //DBGPRINT(("==> Source port: %d\n", ntohs(uh->sport)));
                         //DBGPRINT(("==> Old Dest port: %d\n", ntohs(uh->dport)));
         
-                        uh->checksum = checksum_adjust(ntohs(uh->checksum), ntohs(uh->dport), original);
+                        uh->checksum = ChecksumUpdate(ntohs(uh->checksum), ntohs(uh->dport), original);
                         uh->dport = htons(original);
                         
                         //DBGPRINT(("==> New Dest port: %d\n", ntohs(uh->dport)));
@@ -879,8 +878,7 @@ Return Value:
                 }
             }
         }
-
-        //DBGPRINT(("==> PtReceivePacket: packet_size: %d, i: %d\n", packet_size, i ));
+        
         NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->RecvBufferPoolHandle, pPacketContent, packet_size);
         NdisChainBufferAtFront(MyPacket, MyBuffer);
         

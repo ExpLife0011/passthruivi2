@@ -1,34 +1,56 @@
 #include "precomp.h"
 #pragma hdrstop
 
-// 
-// Update checksum according to old and new port number,
-// all parameters (including the checksum) must be in host
-// byte order, while the new checksum returned is in network 
-// byte order and do not need to be re-ordered.
-//
-USHORT checksum_adjust(USHORT chksum, USHORT oldp, USHORT newp)
+USHORT
+ChecksumUpdate(
+    USHORT chksum, 
+    USHORT oldp, 
+    USHORT newp
+    )
+/*++
+
+Routine Description:
+
+    Update checksum according to old and new 16-bit port (id) number.
+    The computation equation is: HC' = HC + m + ~m', where '+' is one's complement sum.
+    See RFC 1624 for algorithm detail.
+    
+Arguments:
+
+    chksum - Old checksum value in host byte order
+    oldp - Old 16-bit field value in host byte order
+    newp - New 16-bit field value in host byte order that will replace the old value
+
+Return Value:
+
+    Updated checksum value in NETWORK byte order that do not need to be re-ordered
+
+--*/
 {
-    LONG   x;
-    USHORT ret;
+    LONG x = 0;
+    USHORT ret = 0;
 
     x = chksum;
-    x = ~x & 0xffff;
-    x -= oldp & 0xffff;
-    if (x <= 0)
+    x &= 0xffff;
+    
+    // one's complement sum
+    x += oldp & 0xffff;
+    if (x & 0x10000)
     {
-        x--;
+        // fold the carry
+        x++;
         x &= 0xffff;
     }
 
-    x += newp & 0xffff;
+    // one's complement sum
+    x += ~newp & 0xffff;
     if (x & 0x10000)
     {
         x++;
         x &= 0xffff;
     }
 
-    x = ~x & 0xffff;
+    // Change new checksum to network byte order
     ret = (USHORT)(x / 256);
     ret += (USHORT)((x & 0xff) << 8);
     return ret;
@@ -36,7 +58,7 @@ USHORT checksum_adjust(USHORT chksum, USHORT oldp, USHORT newp)
 
 //
 // Checksum computing function for raw data without folding
-// 32bits(ULONG) result INTo 16bits(USHORT) checksum
+// 32bits(ULONG) result into 16bits(USHORT) checksum
 //
 ULONG checksum_unfold(PUSHORT buffer, INT size)
 {
@@ -68,8 +90,8 @@ VOID checksum_tcp4(IP_HEADER *ih, TCP_HEADER *th)
     PSD_HEADER psdh;
     
     NdisZeroMemory(&psdh, sizeof(PSD_HEADER));
-    NdisMoveMemory(psdh.saddr, ih->saddr, 4);
-    NdisMoveMemory(psdh.daddr, ih->daddr, 4);
+    psdh.saddr.u.dword = ih->saddr.u.dword;
+    psdh.daddr.u.dword = ih->daddr.u.dword;
     
     psdh.protocol = ih->protocol;
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
@@ -122,15 +144,15 @@ VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh)
     PSD_HEADER psdh;
     
     NdisZeroMemory(&psdh, sizeof(PSD_HEADER));
-    NdisMoveMemory(psdh.saddr, ih->saddr, 4);
-    NdisMoveMemory(psdh.daddr, ih->daddr, 4);
+    psdh.saddr.u.dword = ih->saddr.u.dword;
+    psdh.daddr.u.dword = ih->daddr.u.dword;
     
     psdh.protocol = ih->protocol;
     psdh.length = uh->length;
     
     size = ntohs(uh->length);
     checksum = uh->checksum;
-    DBGPRINT(("==> checksum_udp4: Old UDP checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_udp4: Old UDP checksum: %02x\n", checksum));
     uh->checksum = 0;
     
     // Compute psuedo-header and udp data seperately
@@ -145,12 +167,12 @@ VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh)
     }
     checksum = (USHORT)(~w3);
     
-    DBGPRINT(("checksum_udp4: Recompute checksum: %02x\n", checksum));
+    //DBGPRINT(("checksum_udp4: Recompute checksum: %02x\n", checksum));
     uh->checksum = checksum;
     
     // Compute ip header checksum
     checksum = ih->checksum;
-    DBGPRINT(("checksum_udp4: Old IP checksum: %02x\n", checksum));
+    //DBGPRINT(("checksum_udp4: Old IP checksum: %02x\n", checksum));
     size = (ih->ver_ihl & 0x0f) * 4;
     
     ih->checksum = 0;
@@ -160,7 +182,7 @@ VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh)
         w1 = (w1 >> 16) + (w1 & 0xffff);
     }
     checksum = (USHORT)(~w1);
-    DBGPRINT(("checksum_udp4: Recompute IP checksum: %02x\n", checksum));
+    //DBGPRINT(("checksum_udp4: Recompute IP checksum: %02x\n", checksum));
     ih->checksum = checksum;
     
     return;
@@ -225,8 +247,8 @@ VOID checksum_tcp6(IP6_HEADER *ip6h, TCP_HEADER *th)
     PSD6_HEADER psd6h;
     
     NdisZeroMemory(&psd6h, sizeof(PSD6_HEADER));
-    NdisMoveMemory(psd6h.saddr, ip6h->saddr, 16);
-    NdisMoveMemory(psd6h.daddr, ip6h->daddr, 16);
+    NdisMoveMemory(psd6h.saddr.u.byte, ip6h->saddr.u.byte, 16);
+    NdisMoveMemory(psd6h.daddr.u.byte, ip6h->daddr.u.byte, 16);
     
     psd6h.length[1] = ip6h->payload;
     psd6h.nexthdr = ip6h->nexthdr;
@@ -266,15 +288,15 @@ VOID checksum_udp6(IP6_HEADER *ip6h, UDP_HEADER *uh)
     PSD6_HEADER psd6h;
     
     NdisZeroMemory(&psd6h, sizeof(PSD6_HEADER));
-    NdisMoveMemory(psd6h.saddr, ip6h->saddr, 16);
-    NdisMoveMemory(psd6h.daddr, ip6h->daddr, 16);
+    NdisMoveMemory(psd6h.saddr.u.byte, ip6h->saddr.u.byte, 16);
+    NdisMoveMemory(psd6h.daddr.u.byte, ip6h->daddr.u.byte, 16);
     
     psd6h.length[1] = ip6h->payload;
     psd6h.nexthdr = ip6h->nexthdr;
     
     size = ntohs(ip6h->payload);
     checksum = uh->checksum;
-    DBGPRINT(("==> checksum_udp6: Old UDP checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_udp6: Old UDP checksum: %02x\n", checksum));
     uh->checksum = 0;
     
     // Compute psuedo-header and udp data seperately
@@ -289,7 +311,7 @@ VOID checksum_udp6(IP6_HEADER *ip6h, UDP_HEADER *uh)
     }
     checksum = (USHORT)(~w3);
     
-    DBGPRINT(("==> checksum_udp6: Recompute UDP checksum: %02x\n", checksum));
+    //DBGPRINT(("==> checksum_udp6: Recompute UDP checksum: %02x\n", checksum));
     uh->checksum = checksum;
     
     return;
@@ -307,8 +329,8 @@ VOID checksum_icmp6(IP6_HEADER *ip6h, ICMP6_HEADER *icmp6h)
     PSD6_HEADER psd6h;
     
     NdisZeroMemory(&psd6h, sizeof(PSD6_HEADER));
-    NdisMoveMemory(psd6h.saddr, ip6h->saddr, 16);
-    NdisMoveMemory(psd6h.daddr, ip6h->daddr, 16);
+    NdisMoveMemory(psd6h.saddr.u.byte, ip6h->saddr.u.byte, 16);
+    NdisMoveMemory(psd6h.daddr.u.byte, ip6h->daddr.u.byte, 16);
     
     psd6h.length[1] = ip6h->payload;
     psd6h.nexthdr = ip6h->nexthdr;

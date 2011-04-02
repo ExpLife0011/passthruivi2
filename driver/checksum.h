@@ -1,7 +1,14 @@
 #ifndef _CHECKSUM_H
 #define _CHECKSUM_H
 
-USHORT checksum_adjust(USHORT chksum, USHORT oldp, USHORT newp);
+USHORT
+ChecksumUpdate(
+    USHORT chksum, 
+    USHORT oldp, 
+    USHORT newp
+    );
+
+
 ULONG checksum_unfold(PUSHORT buffer, INT size);
 VOID checksum_tcp4(IP_HEADER *ih, TCP_HEADER *th);
 VOID checksum_udp4(IP_HEADER *ih, UDP_HEADER *uh);

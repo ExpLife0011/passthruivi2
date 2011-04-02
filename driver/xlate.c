@@ -20,38 +20,34 @@ UINT    enable_xlate    = 1;  /* default to 1 */
 UINT    xlate_mode      = 0;  /* default to 1 */
 
 
-ULONG
-IsIviAddress(
-    IN PUCHAR addr
+VOID
+IPAddr4to6(
+    PIN_ADDR  ip_addr, 
+    PIN6_ADDR ip6_addr, 
+    BOOLEAN   localip
     )
 /*++
 
 Routine Description:
 
-    Check IVI address format.
+    Translate IPv4 address to IPv6 address.
     
 Arguments:
 
-    addr - Pointer to array that contains an IPv6 address
+    ip_addr - Pointer to the IPv4 address that needs to be translated
+    ip6_addr - Pointer to the caller-supplied IPv6 address structure that holds the translated address
+    localip - Indicate whether the IPv4 address is local IP  // XXX: should be changed to IVI MIB info struct in the future
 
 Return Value:
 
-    1 if the address is IVI format; otherwise return 0.
+    None.
 
 --*/
 {
-    return NdisEqualMemory(addr, prefix, prefix_length / 8);
-}
-
-//
-// Translate IPv4 address to IPv6 address
-//
-VOID ip_addr4to6(PUCHAR ip_addr, PUCHAR ip6_addr, UINT localip)
-{
     UINT prefixLengthN = prefix_length / 8;   // prefix length must be a multiple of 8
     
-    NdisMoveMemory(ip6_addr, prefix, prefix_length);
-    NdisMoveMemory(ip6_addr + prefixLengthN, ip_addr, 4);
+    NdisMoveMemory(ip6_addr->u.byte, prefix, prefix_length);
+    NdisMoveMemory(ip6_addr->u.byte + prefixLengthN, ip_addr->u.byte, 4);
     
     // port multiplex
     if (xlate_mode == 1 && localip == 1)  /* do port coding for local ip only */
@@ -67,8 +63,8 @@ VOID ip_addr4to6(PUCHAR ip_addr, PUCHAR ip6_addr, UINT localip)
          */
         
         // New format
-        *(ip6_addr+prefixLengthN+4) = mod_ratio + ((res >> 8) & 0x0f);
-        *(ip6_addr+prefixLengthN+5) = res & 0xff;
+        ip6_addr->u.byte[prefixLengthN + 4] = mod_ratio + ((res >> 8) & 0x0f);
+        ip6_addr->u.byte[prefixLengthN + 5] = res & 0xff;
     }
     
     return;
@@ -86,20 +82,38 @@ VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h)
     ip6h->hoplimit = ih->ttl;
     
     // address mapping
-    ip_addr4to6(ih->saddr, ip6h->saddr, 1);  // port coding for local ip /* XXX */
-    ip_addr4to6(ih->daddr, ip6h->daddr, 0);  // no port conding for remote ip
+    IPAddr4to6(&(ih->saddr), &(ip6h->saddr), TRUE);   // port coding for local ip /* XXX */
+    IPAddr4to6(&(ih->daddr), &(ip6h->daddr), FALSE);  // no port conding for remote ip
     
     return;
 }
 
-//
-// Translate IPv6 address to IPv4 address
-//
-VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr)
+
+VOID
+IPAddr6to4(
+    PIN6_ADDR ip6_addr, 
+    PIN_ADDR  ip_addr
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 address to IPv4 address.
+    
+Arguments:
+
+    ip6_addr - Pointer to the IPv6 address that needs to be translated
+    ip_addr - Pointer to the caller-supplied IPv4 address structure that holds the translated address
+
+Return Value:
+
+    None.
+
+--*/
 {
     if (IsIviAddress(ip6_addr) == 1)
     {
-        NdisMoveMemory(ip_addr, ip6_addr + (prefix_length / 8), 4);
+        NdisMoveMemory(ip_addr->u.byte, ip6_addr->u.byte + (prefix_length / 8), 4);
     }
     else
     {
@@ -114,10 +128,10 @@ VOID ip_addr6to4(PUCHAR ip6_addr, PUCHAR ip_addr)
          * 
          */
          
-        *ip_addr     = 192;
-        *(ip_addr+1) = 168;
-        *(ip_addr+2) = *(ip6_addr+14);
-        *(ip_addr+3) = *(ip6_addr+15);
+        ip_addr->u.byte[0] = 192;
+        ip_addr->u.byte[1] = 168;
+        ip_addr->u.byte[2] = ip6_addr->u.byte[14];
+        ip_addr->u.byte[3] = ip6_addr->u.byte[15];
     }
 }
 
@@ -133,8 +147,8 @@ VOID ip6to4(IP6_HEADER *ip6h, IP_HEADER *ih)
     ih->protocol = ip6h->nexthdr;
 
     // IVI address mapping
-    ip_addr6to4(ip6h->saddr, ih->saddr);
-    ip_addr6to4(ip6h->daddr, ih->daddr);
+    IPAddr6to4(&(ip6h->saddr), &(ih->saddr));
+    IPAddr6to4(&(ip6h->daddr), &(ih->daddr));
 
     return;
 }
@@ -154,7 +168,6 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     TCP_HEADER   *th_6;
     INT           size;
     USHORT        newport;
-    UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
     eh     = (ETH_HEADER *)(pPacket);
@@ -186,13 +199,9 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     th_6->sport = htons(newport);
     
     checksum_tcp6(ip6h, th_6);
-
-    // Done
     
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ih->length) + 20);
 }
 
 //
@@ -209,7 +218,6 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     TCP_HEADER   *th_4;
     INT           size;
     USHORT        oldport;
-    UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
     eh     = (ETH_HEADER *)(pPacket);
@@ -242,17 +250,13 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     
     checksum_tcp4(ih, th_4);
 
-    // Done
-    
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
 //
 // Translate IPv4 ICMP packet into IPv6 ICMP packet, 
-// return packet_size on success, return 0 if failed
+// return packet size on success, return 0 if failed
 //
 UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
 {
@@ -268,7 +272,6 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     INT           data_size;
     USHORT        new_id;
     BOOLEAN       ret;
-    UINT          packet_size = 0;   // bytes need to be sent
     
     // Point headers
     eh     = (ETH_HEADER   *)(pPacket);
@@ -292,7 +295,7 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     icmp6h->code = 0;
     icmp6h->checksum = 0;
     icmp6h->id = icmph->id;
-    icmp6h->sequence = icmph->sequence;
+    icmp6h->seq = icmph->seq;
 
     // Id mapping
     ret = GetIcmpIdMapOut(ntohs(icmph->id), TRUE, &new_id);
@@ -310,13 +313,9 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     NdisMoveMemory(data_new, data, data_size);
 
     checksum_icmp6(ip6h, icmp6h);
-
-    // Done
     
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ih->length) + 20);
 }
 
 //
@@ -381,7 +380,7 @@ Return Value:
     icmph->code = 0;
     icmph->checksum = 0;
     icmph->id = icmp6h->id;
-    icmph->sequence = icmp6h->sequence;
+    icmph->seq = icmp6h->seq;
     
     // Id mapping using pre-fetched original id
     icmph->id = htons(OldId);
@@ -400,7 +399,7 @@ Return Value:
 
 //
 // Translate IPv4 UDP packet into IPv6 UDP packet,
-// return packet_size on success, return 0 if failed
+// return packet size on success, return 0 if failed
 //
 UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
 {
@@ -414,7 +413,6 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     INT           size;
     USHORT        newport;
     BOOLEAN       ret;
-    UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
     eh     = (ETH_HEADER  *)(pPacket);
@@ -446,13 +444,9 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     uh_6->sport = htons(newport);
     
     checksum_udp6(ip6h, uh_6);
-
-    // Done
     
-    // Set packet_size
-    packet_size = sizeof(ETH_HEADER) + ntohs(ih->length) + 20;
-    
-    return packet_size;
+    // Return new packet size (including Ethernet header length)
+    return (sizeof(ETH_HEADER) + ntohs(ih->length) + 20);
 }
 
 
@@ -489,7 +483,6 @@ Return Value:
     
     INT           size;
     BOOLEAN       ret, trans;
-    UINT          packet_size = 0; // bytes need to be sent
     
     // Point headers
     eh     = (ETH_HEADER  *)(IPv6Packet);

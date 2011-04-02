@@ -334,11 +334,6 @@ Return Value:
 {
     PIO_STACK_LOCATION  irpStack;
     NTSTATUS            status = STATUS_SUCCESS;
-    ULONG               BytesReturned = 0;
-    ULONG               FunctionCode;
-    PUCHAR              ioBuffer = NULL;
-    ULONG               inputBufferLength;
-    ULONG               outputBufferLength;
 
     UNREFERENCED_PARAMETER(DeviceObject);
     
@@ -348,19 +343,6 @@ Return Value:
     switch (irpStack->MajorFunction)
     {
         case IRP_MJ_CREATE:
-            /*
-             * OpenLock is depricated!
-             *
-            if( !OpenLock ) {
-                OpenLock = 1;
-                DBGPRINT(("==> Device Open success\n"));
-            }
-            else {
-                DBGPRINT(("==> Device already opened!\n"));
-                status = STATUS_ACCESS_DENIED;
-            }
-             *
-             */
             DBGPRINT(("==> Device Open\n"));
             break;
         
@@ -369,7 +351,6 @@ Return Value:
             break;
             
         case IRP_MJ_CLOSE:
-            // OpenLock = 0;  /* Depricated */
             DBGPRINT(("==> Device Close\n"));
             break;
         

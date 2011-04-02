@@ -425,7 +425,7 @@ Return Value:
                     
                     //DBGPRINT(("==> MPSendPackets: Packet (eth frame) size %d.\n", PacketLength));
                     
-                    if (IsIviAddress(ip6h->saddr) == 1)
+                    if (IsIviAddress(&(ip6h->saddr)) == 1)
                     {
                         if (ip6h->nexthdr == IP_TCP)
                         {
@@ -434,8 +434,9 @@ Return Value:
                             
                             th = (TCP_HEADER *)(pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
-                            //DBGPRINT(("==> Old Source port: %d\n", ntohs(th->sport)));
-                            //DBGPRINT(("==> Dest port: %d\n", ntohs(th->dport)));
+                            //DBGPRINT(("==> Old source port: %d\n", ntohs(th->sport)));
+                            //DBGPRINT(("==> Old checksum: %02x\n", th->checksum));
+                            
                             size = ntohs(ip6h->payload);
                             mapped = GetTcpPortMapOut(th, size, FALSE);
                             
@@ -448,10 +449,10 @@ Return Value:
                                 break;
                             }
                             
-                            th->checksum = checksum_adjust(ntohs(th->checksum), ntohs(th->sport), mapped);;
+                            th->checksum = ChecksumUpdate(ntohs(th->checksum), ntohs(th->sport), mapped);;
                             th->sport = htons(mapped);
                             
-                            //DBGPRINT(("==> New Source port: %d\n", mapped));
+                            //DBGPRINT(("==> New source port: %d\n", mapped));
                             //DBGPRINT(("==> New checksum: %02x\n", th->checksum));
                         }
                         else if (ip6h->nexthdr == IP_UDP)
@@ -461,8 +462,8 @@ Return Value:
                             
                             uh = (UDP_HEADER *)( pPacketContent + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) );
                             
-                            //DBGPRINT(("==> Old Source port: %d\n", ntohs(uh->sport)));
-                            //DBGPRINT(("==> Dest port: %d\n", ntohs(uh->dport)));
+                            //DBGPRINT(("==> Old source port: %d\n", ntohs(uh->sport)));
+                            //DBGPRINT(("==> Old checksum: %02x\n", uh->checksum));
                             
                             ret = GetUdpPortMapOut(ntohs(uh->sport), FALSE, &mapped);
                             
@@ -475,7 +476,7 @@ Return Value:
                                 break;
                             }
                             
-                            uh->checksum = checksum_adjust(ntohs(uh->checksum), ntohs(uh->sport), mapped);;
+                            uh->checksum = ChecksumUpdate(ntohs(uh->checksum), ntohs(uh->sport), mapped);;
                             uh->sport = htons(mapped);
                             
                             //DBGPRINT(("==> New Source port: %d\n", mapped));
@@ -491,6 +492,7 @@ Return Value:
                             if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
                             {
                                 //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                                //DBGPRINT(("==> Old checksum: %02x\n", icmp6h->checksum));
                                 
                                 ret = GetIcmpIdMapOut(ntohs(icmp6h->id), FALSE, &mapped);
                                 
@@ -503,7 +505,7 @@ Return Value:
                                     break;
                                 }
                                 
-                                icmp6h->checksum = checksum_adjust(ntohs(icmp6h->checksum), ntohs(icmp6h->id), mapped);;
+                                icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), mapped);;
                                 icmp6h->id = htons(mapped);
                                 
                                 //DBGPRINT(("==> New id: %d\n", mapped));
@@ -513,7 +515,6 @@ Return Value:
                     }
                 }
                 
-                //DBGPRINT(("==> MPSendPackets: packet_size: %d, j: %d\n", packet_size, j));
                 NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->SendBufferPoolHandle, pPacketContent, packet_size);
                 NdisChainBufferAtFront(MyPacket, MyBuffer);
                 

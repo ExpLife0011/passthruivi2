@@ -467,7 +467,7 @@ Routine Description:
 Arguments:
 
     th - Pointer to TCP header of this segment, should not be NULL
-    sack - Pointer to caller-provided storage for max sack in this segment,
+    sack - Pointer to caller-supplied storage for max sack in this segment,
            this value is assumed to be initialized first by caller.
 
 Return Value:

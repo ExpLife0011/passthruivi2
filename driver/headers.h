@@ -23,31 +23,42 @@ typedef struct _ARP_HEADER
     UCHAR  prot_size;
     USHORT option;
     UCHAR  smac[6];
-    UCHAR  sip[4];
+    UCHAR  sip[4];  // We cannot use IN_ADDR here because of ULONG alignment is not correct.
     UCHAR  dmac[6];
-    UCHAR  dip[4];
+    UCHAR  dip[4];  // Keep it the same with sip, although the ULONG alignment is correct now.
 } ARP_HEADER, *PARP_HEADER;
+
+/* IPv4 address */
+typedef struct _IN_ADDR
+{
+    union
+    {
+        UCHAR  byte[4];
+        USHORT word[2];
+        ULONG  dword;
+    } u;
+} IN_ADDR, *PIN_ADDR;
 
 /* IPv4 header */
 typedef struct _IP_HEADER
 {
-    UCHAR  ver_ihl;        // Version (4 bits) + Internet header length (4 bits)
-    UCHAR  tos;            // Type of service 
-    USHORT length;         // Total length 
-    USHORT id;             // Identification
-    USHORT flags_fo;       // Flags (3 bits) + Fragment offset (13 bits)
-    UCHAR  ttl;            // Time to live
-    UCHAR  protocol;       // Protocol
-    USHORT checksum;       // Header checksum
-    UCHAR  saddr[4];       // Source address
-    UCHAR  daddr[4];       // Destination address
+    UCHAR    ver_ihl;        // Version (4 bits) + Internet header length (4 bits)
+    UCHAR    tos;
+    USHORT   length;         // Total length (including IP header length)
+    USHORT   id;
+    USHORT   flags_fo;       // Flags (3 bits) + Fragment offset (13 bits)
+    UCHAR    ttl;
+    UCHAR    protocol;
+    USHORT   checksum;
+    IN_ADDR  saddr;
+    IN_ADDR  daddr;
 } IP_HEADER, *PIP_HEADER;
 
 /* Pseudo IPv4 header */
 typedef struct _PSD_HEADER
 {
-    UCHAR    saddr[4];
-    UCHAR    daddr[4];
+    IN_ADDR  saddr;
+    IN_ADDR  daddr;
     UCHAR    zero;
     UCHAR    protocol;
     USHORT   length;
@@ -60,26 +71,37 @@ typedef struct _ICMP_HEADER
     UCHAR  code;
     USHORT checksum;
     USHORT id;
-    USHORT sequence;
+    USHORT seq;
 } ICMP_HEADER, *PICMP_HEADER;
+
+/* IPv6 address */
+typedef struct _IN6_ADDR
+{
+    union
+    {
+        UCHAR   byte[16];
+        USHORT  word[8];
+        ULONG   dword[4];
+    } u;
+} IN6_ADDR, *PIN6_ADDR;
 
 /* IPv6 header */
 typedef struct _IP6_HEADER
 {
-    UCHAR    ver_pri;
-    UCHAR    flowlbl[3];
-    USHORT   payload;     // payload length (without header length)
-    UCHAR    nexthdr;
-    UCHAR    hoplimit;
-    UCHAR    saddr[16];   // 128 bits source address
-    UCHAR    daddr[16];   // 128 bits destination address
+    UCHAR     ver_pri;
+    UCHAR     flow_lbl[3];
+    USHORT    payload;      // payload length (without IPv6 header length)
+    UCHAR     nexthdr;
+    UCHAR     hoplimit;
+    IN6_ADDR  saddr;
+    IN6_ADDR  daddr;
 } IP6_HEADER, *PIP6_HEADER;
 
 /* Pseudo IPv6 header */
 typedef struct _PSD6_HEADER
 {
-    UCHAR    saddr[16];
-    UCHAR    daddr[16];
+    IN6_ADDR saddr;
+    IN6_ADDR daddr;
     USHORT   length[2];
     UCHAR    zero[3];
     UCHAR    nexthdr;
@@ -92,30 +114,30 @@ typedef struct _ICMP6_HEADER
     UCHAR  code;
     USHORT checksum;
     USHORT id;
-    USHORT sequence;    // MTU in UNREACH packets
+    USHORT seq;
 } ICMP6_HEADER, *PICMP6_HEADER;
 
 /* TCP header */
 typedef struct _TCP_HEADER
 {
-    USHORT  sport;   // Source port
-    USHORT  dport;   // Destination port
+    USHORT  sport;
+    USHORT  dport;
     ULONG   seq;
     ULONG   ack;
     UCHAR   doff;    // Data offset  
     UCHAR   bits;    // Control bits
     USHORT  window;
     USHORT  checksum;
-    USHORT  urgptr;
+    USHORT  urg_ptr;
 } TCP_HEADER, *PTCP_HEADER;
 
 /* UDP header*/
 typedef struct _UDP_HEADER
 {
-    USHORT sport;          // Source port
-    USHORT dport;          // Destination port
-    USHORT length;         // Datagram length
-    USHORT checksum;       // Checksum
+    USHORT sport;
+    USHORT dport;
+    USHORT length;         // Datagram length (including UDP header length)
+    USHORT checksum;
 } UDP_HEADER, *PUDP_HEADER;
 
 /* Protocol constants */
@@ -142,36 +164,10 @@ typedef struct _UDP_HEADER
 
 /* ICMP types */
 #define ICMP_ECHO_REPLY     0
-#define ICMP_DEST_UNREACH   3
 #define ICMP_ECHO           8
-#define ICMP_TIME_EXCEEDED 11
-
-/* ICMP codes for UNREACH */
-#define ICMP_NET_UNREACH    0
-#define ICMP_HOST_UNREACH   1
-#define ICMP_PORT_UNREACH   3
-#define ICMP_FRAG_NEEDED    4
-#define ICMP_PKT_FILTERED  13
  
 /* ICMPv6 types */
 #define ICMP6_ECHO        128
 #define ICMP6_ECHO_REPLY  129
-
-#define ICMP6_DEST_UNREACH  1
-#define ICMP6_PKT_TOOBIG    2
-#define ICMP6_TIME_EXCEED   3
-
-/* ICMPv6 codes for UNREACH */
-#define ICMP6_NOROUTE                  0
-#define ICMP6_ADM_PROHIBITED           1
-#define ICMP6_ADDR_UNREACH             3
-#define ICMP6_PORT_UNREACH             4
-
-/* Neighbor discovery */
-#define ICMP6_NEIGH_SOLIC 135
-#define ICMP6_NEIGH_ADVER 136
-
-#define ND_SRC_MAC          1
-#define ND_TAR_MAC          2
 
 #endif // _HEADERS_H_
