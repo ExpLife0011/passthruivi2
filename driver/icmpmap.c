@@ -11,7 +11,7 @@ USHORT            LastAllocatedId = 0;
 NDIS_SPIN_LOCK    IdListLock;
 
 // Time-Out for mapping entries
-LARGE_INTEGER     IcmpTimeOut = { 5 MINS };
+LARGE_INTEGER     IcmpTimeOut = { 1 MINS };   // See RFC 5508
 
 // Large hash table for ICMP id mapping
 ICMP_ID_MAP       IcmpIdMapOutTable[65536];   // Hash table for ICMP from original id to mapping id
@@ -83,7 +83,7 @@ Routine Description:
         RemoveEntryList(temp);
         IdListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetIcmpListsSafe: map context memory freed.\n"));
+        //DBGPRINT(("==> ResetIcmpListsSafe: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -137,7 +137,7 @@ Routine Description:
         RemoveEntryList(temp);
         IdListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetIcmpLists: map context memory freed.\n"));
+        //DBGPRINT(("==> ResetIcmpLists: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -196,7 +196,7 @@ Routine Description:
             RemoveEntryList(temp);
             IdListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshIcmpListEntrySafe: map context memory freed.\n"));
+            //DBGPRINT(("==> RefreshIcmpListEntrySafe: map context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -254,7 +254,7 @@ Routine Description:
             RemoveEntryList(temp);
             IdListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshIcmpListEntry: map context memory freed.\n"));
+            //DBGPRINT(("==> RefreshIcmpListEntry: map context memory freed.\n"));
             // Go to next entry
         }
         else

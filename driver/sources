@@ -48,5 +48,6 @@ SOURCES=\
     receive.c \
     portmap.c \
     portmap_tcp.c \
-    icmpmap.c
+    icmpmap.c \
+    prefix.c
 

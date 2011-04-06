@@ -33,11 +33,14 @@ Routine Description:
     NdisAllocateSpinLock(&StateListLock);
     NdisAllocateSpinLock(&PortListLock);
     NdisAllocateSpinLock(&IdListLock);
+    NdisAllocateSpinLock(&PrefixListLock);
     
     InitTcpLists();
     InitUdpLists();
     InitIcmpLists();
+    InitPrefixList();
 }
+
 
 VOID
 ReleaseMapListsAndLocks(
@@ -54,8 +57,10 @@ Routine Description:
     ResetTcpLists();
     ResetUdpLists();
     ResetIcmpLists();
+    ResetPrefixList();
     
     NdisFreeSpinLock(&StateListLock);
     NdisFreeSpinLock(&PortListLock);
     NdisFreeSpinLock(&IdListLock);
+    NdisFreeSpinLock(&PrefixListLock);
 }

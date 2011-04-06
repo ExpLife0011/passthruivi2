@@ -8,7 +8,7 @@ UCHAR   mod_ratio       = 0x80;  // k is shifted to higher 4 bit already
 USHORT  res             = 1;
 
 // MAC for local NICs and gateway
-UCHAR   gatewayMAC[6]   = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
+UCHAR   GatewayMAC[6]   = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
 
 UINT    enable_xlate    = 1;  /* default to 1 */
 
@@ -20,11 +20,49 @@ UINT    enable_xlate    = 1;  /* default to 1 */
 UINT    xlate_mode      = 0;  /* default to 1 */
 
 
+BOOLEAN
+IsEtherUnicast(
+    PUCHAR   mac
+    )
+/*++
+
+Routine Description:
+
+    Check whether the given Ethernet address is unicast address.
+    
+Arguments:
+
+    mac - Pointer to the Ethernet MAC address
+
+Return Value:
+
+    TRUE if the mac address is unicast address; otherwise return FALSE.
+
+--*/
+{
+    if ((mac[0] == 0x01) && (mac[1] == 0) && (mac[2] == 0x5e) && ((mac[3] & 0x80) == 0))
+    {
+        // Ethernet multicast address: 01-00-5E-00-00-00 to 01-00-5E-7F-FF-FF
+        return FALSE;
+    }
+    else if ((mac[0] == 0xff) && (mac[1] == 0xff) && (mac[2] == 0xff) && 
+             (mac[3] == 0xff) && (mac[4] == 0xff) && (mac[5] == 0xff))
+    {
+        // Ethernet broadcast address: FF-FF-FF-FF-FF-FF
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
+    }
+}
+
+
 VOID
 IPAddr4to6(
-    PIN_ADDR  ip_addr, 
-    PIN6_ADDR ip6_addr, 
-    BOOLEAN   localip
+    IN PIN_ADDR  ip_addr, 
+    OUT PIN6_ADDR ip6_addr, 
+    IN PIVI_PREFIX_MIB mib
     )
 /*++
 
@@ -36,7 +74,7 @@ Arguments:
 
     ip_addr - Pointer to the IPv4 address that needs to be translated
     ip6_addr - Pointer to the caller-supplied IPv6 address structure that holds the translated address
-    localip - Indicate whether the IPv4 address is local IP  // XXX: should be changed to IVI MIB info struct in the future
+    mib - Pointer to IVI prefix mib for the ip_addr
 
 Return Value:
 
@@ -44,62 +82,77 @@ Return Value:
 
 --*/
 {
-    UINT prefixLengthN = prefix_length / 8;   // prefix length must be a multiple of 8
+    INT PrefixLengthN = mib->PrefixLength / 8;   // prefix length must be a multiple of 8
     
-    NdisMoveMemory(ip6_addr->u.byte, prefix, prefix_length);
-    NdisMoveMemory(ip6_addr->u.byte + prefixLengthN, ip_addr->u.byte, 4);
+    NdisMoveMemory(ip6_addr->u.byte, mib->Prefix.u.byte, PrefixLengthN);
+    NdisMoveMemory(ip6_addr->u.byte + PrefixLengthN, ip_addr->u.byte, 4);
     
-    // port multiplex
-    if (xlate_mode == 1 && localip == 1)  /* do port coding for local ip only */
+    // ip address multiplex
+    if (mib->XlateMode == 1)
     {
         /*
          * Old format!
          *
-        *(ip6_addr+12) = (mod >> 8) & 0xff;
-        *(ip6_addr+13) = mod & 0xff;
-        *(ip6_addr+14) = (res >> 8) & 0xff;
-        *(ip6_addr+15) = res &0xff;
+        ip6_addr->u.byte[12] = (mod >> 8) & 0xff;
+        ip6_addr->u.byte[13] = mod & 0xff;
+        ip6_addr->u.byte[14] = (res >> 8) & 0xff;
+        ip6_addr->u.byte[15] = res & 0xff;
          *
          */
         
         // New format
-        ip6_addr->u.byte[prefixLengthN + 4] = mod_ratio + ((res >> 8) & 0x0f);
-        ip6_addr->u.byte[prefixLengthN + 5] = res & 0xff;
+        ip6_addr->u.byte[PrefixLengthN + 4] = (mib->SuffixCode >> 8) & 0xff;
+        ip6_addr->u.byte[PrefixLengthN + 5] = mib->SuffixCode & 0xff;
     }
-    
-    return;
-}
-
-//
-// Translate IPv4 header to IPv6 header
-//
-VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h)
-{
-    // ip6h must be memset to zero before calling this function!
-    ip6h->ver_pri = 0x60;
-    ip6h->payload = htons(ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4);
-    ip6h->nexthdr = ih->protocol;
-    ip6h->hoplimit = ih->ttl;
-    
-    // address mapping
-    IPAddr4to6(&(ih->saddr), &(ip6h->saddr), TRUE);   // port coding for local ip /* XXX */
-    IPAddr4to6(&(ih->daddr), &(ip6h->daddr), FALSE);  // no port conding for remote ip
-    
-    return;
 }
 
 
 VOID
-IPAddr6to4(
-    PIN6_ADDR ip6_addr, 
-    PIN_ADDR  ip_addr
+Ip4to6(
+    IN PIP_HEADER ih, 
+    OUT PIP6_HEADER ip6h,
+    IN PIVI_PREFIX_MIB mib
     )
 /*++
 
 Routine Description:
 
-    Translate IPv6 address to IPv4 address.
+    Translate IPv4 header to IPv6 header.
     
+Arguments:
+
+    ih - Pointer to the IPv4 header that needs to be translated
+    ip6h - Pointer to the caller-supplied IPv6 header structure that holds the translated header
+    mib - Pointer to IVI prefix mib for the destination address in IPv4 header
+
+Return Value:
+
+    None.
+
+--*/
+{
+    ip6h->ver_pri = 0x60;
+    ip6h->payload = htons(ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4);
+    ip6h->nexthdr = ih->protocol;
+    ip6h->hoplimit = ih->ttl;
+    
+    // address translation
+    IPAddr4to6(&(ih->saddr), &(ip6h->saddr), &LocalPrefixInfo);  // Use local prefix info for src address translation
+    IPAddr4to6(&(ih->daddr), &(ip6h->daddr), mib);
+}
+
+
+VOID
+IPAddr6to4(
+    IN PIN6_ADDR ip6_addr, 
+    OUT PIN_ADDR  ip_addr
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 address to IPv4 address. // XXX: should also use mib in this function
+
 Arguments:
 
     ip6_addr - Pointer to the IPv6 address that needs to be translated
@@ -135,47 +188,73 @@ Return Value:
     }
 }
 
-//
-// Translate IPv6 header to IPv4 header
-//
-VOID ip6to4(IP6_HEADER *ip6h, IP_HEADER *ih)
+
+VOID
+Ip6to4(
+    IN PIP6_HEADER ip6h, 
+    OUT PIP_HEADER ih
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 header to IPv4 header.
+    
+Arguments:
+
+    ip6h - Pointer to the IPv6 header that needs to be translated
+    ih - Pointer to the caller-supplied IPv4 header structure that holds the translated header
+
+Return Value:
+
+    None.
+
+--*/
 {
-    // ih must be memset to zero before calling this function!
     ih->ver_ihl = 0x45;
     ih->length = htons(ntohs(ip6h->payload) + 20);
     ih->ttl = ip6h->hoplimit;
     ih->protocol = ip6h->nexthdr;
 
-    // IVI address mapping
+    // address translation
     IPAddr6to4(&(ip6h->saddr), &(ih->saddr));
     IPAddr6to4(&(ip6h->daddr), &(ih->daddr));
-
-    return;
 }
 
 
-//
-// Translate IPv4 TCP packet into IPv6 TCP packet,
-// return packet_size on success, return 0 if failed
-//
-UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
+UINT
+Tcp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    IN OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv4 TCP packet into IPv6 TCP packet.
+    
+Arguments:
+
+    Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
+    Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
+    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+
+Return Value:
+
+    Length of the translated packet on success; return 0 if failed.
+
+--*/
 {
-    ETH_HEADER   *eh;
-    IP_HEADER    *ih;
-    TCP_HEADER   *th;
-    ETH_HEADER   *eh_6;
-    IP6_HEADER   *ip6h;
-    TCP_HEADER   *th_6;
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    TCP_HEADER   *th = (TCP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
+    ETH_HEADER   *eh_6 = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    TCP_HEADER   *th_6 = (TCP_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    
     INT           size;
     USHORT        newport;
-    
-    // Point headers
-    eh     = (ETH_HEADER *)(pPacket);
-    ih     = (IP_HEADER  *)(pPacket + sizeof(ETH_HEADER));
-    th     = (TCP_HEADER *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
-    eh_6   = (ETH_HEADER *)(pNewPacket);
-    ip6h   = (IP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER));
-    th_6   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
@@ -183,7 +262,7 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    ip4to6(ih, ip6h);
+    Ip4to6(ih, ip6h, mib);
     
     // Copy TCP header & data
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
@@ -193,7 +272,7 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     newport = GetTcpPortMapOut(th, size, TRUE);
     if (newport == 0)
     {
-        DBGPRINT(("==> tcp4to6: find map failed.\n"));
+        DBGPRINT(("==> Tcp4to6: find map failed.\n"));
         return 0;
     }
     th_6->sport = htons(newport);
@@ -204,28 +283,38 @@ UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     return (sizeof(ETH_HEADER) + ntohs(ih->length) + 20);
 }
 
-//
-// Translate IPv6 TCP packet into IPv4 TCP packet,
-// return packet_size on success, return 0 if failed
-//
-UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
-{
-    ETH_HEADER   *eh;
-    IP6_HEADER   *ip6h;
-    TCP_HEADER   *th;
-    ETH_HEADER   *eh_4;
-    IP_HEADER    *ih;
-    TCP_HEADER   *th_4;
-    INT           size;
-    USHORT        oldport;
+
+UINT
+Tcp6to4(
+    IN PUCHAR Ipv6PacketData, 
+    IN OUT PUCHAR Ipv4PacketData
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv6 TCP packet into IPv4 TCP packet.
     
-    // Point headers
-    eh     = (ETH_HEADER *)(pPacket);
-    ip6h   = (IP6_HEADER *)(pPacket + sizeof(ETH_HEADER));
-    th     = (TCP_HEADER *)(pPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    eh_4   = (ETH_HEADER *)(pNewPacket);
-    ih     = (IP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
-    th_4   = (TCP_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+Arguments:
+
+    Ipv6PacketData - Pointer to the IPv6 packet data memory that needs to be translated
+    Ipv4PacketData - Pointer to the caller-supplied IPv4 packet data memory that holds the translated packet
+
+Return Value:
+
+    Length of the translated packet on success; return 0 if failed.
+
+--*/
+{
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    TCP_HEADER   *th = (TCP_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ETH_HEADER   *eh_4 = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    TCP_HEADER   *th_4 = (TCP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
+    
+    INT           size;
+    USHORT        oldport;  
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -233,7 +322,7 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-    ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih);
     
     // Copy TCP header & data
     size = ntohs(ip6h->payload);
@@ -243,7 +332,7 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     oldport = GetTcpPortMapIn(th, size);
     if (oldport == 0)
     {
-        DBGPRINT(("==> tcp6to4: find map failed.\n"));
+        DBGPRINT(("==> Tcp6to4: find map failed.\n"));
         return 0;
     }
     th_4->dport = htons(oldport);
@@ -254,18 +343,37 @@ UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket)
     return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
-//
-// Translate IPv4 ICMP packet into IPv6 ICMP packet, 
-// return packet size on success, return 0 if failed
-//
-UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
+
+UINT
+Icmp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    IN OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv4 ICMP packet into IPv6 ICMP packet.
+    
+Arguments:
+
+    Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
+    Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
+    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+
+Return Value:
+
+    Length of the translated packet on success; return 0 if failed.
+
+--*/
 {
-    ETH_HEADER   *eh;
-    IP_HEADER    *ih;
-    ICMP_HEADER  *icmph;
-    ETH_HEADER   *eh_6;
-    IP6_HEADER   *ip6h;
-    ICMP6_HEADER *icmp6h;
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    ICMP_HEADER  *icmph = (ICMP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
+    ETH_HEADER   *eh_6 = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    ICMP6_HEADER *icmp6h = (ICMP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     PUCHAR        data;
     PUCHAR        data_new;
@@ -273,21 +381,13 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     USHORT        new_id;
     BOOLEAN       ret;
     
-    // Point headers
-    eh     = (ETH_HEADER   *)(pPacket);
-    ih     = (IP_HEADER    *)(pPacket + sizeof(ETH_HEADER));
-    icmph  = (ICMP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
-    eh_6   = (ETH_HEADER   *)(pNewPacket);
-    ip6h   = (IP6_HEADER   *)(pNewPacket + sizeof(ETH_HEADER));
-    icmp6h = (ICMP6_HEADER *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
     ETH_COPY_NETWORK_ADDRESS(eh_6->smac, eh->smac);
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    ip4to6(ih, ip6h);
+    Ip4to6(ih, ip6h, mib);
     ip6h->nexthdr = IP_ICMP6;
 
     // Build ICMPv6 header
@@ -301,14 +401,14 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     ret = GetIcmpIdMapOut(ntohs(icmph->id), TRUE, &new_id);
     if (ret != TRUE)
     {
-        DBGPRINT(("==> icmp4to6: find map failed!\n"));
+        DBGPRINT(("==> Icmp4to6: find map failed!\n"));
         return 0;
     }
     icmp6h->id = htons(new_id);
 
     // Copy data
-    data       = pPacket + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
-    data_new   = pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
+    data       = Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
+    data_new   = Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
     data_size  = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4 - sizeof(ICMP_HEADER);
     NdisMoveMemory(data_new, data, data_size);
 
@@ -324,8 +424,8 @@ UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
 //
 UINT
 Icmp6to4(
-    IN PUCHAR IPv6Packet, 
-    IN PUCHAR IPv4Packet, 
+    IN PUCHAR Ipv6PacketData, 
+    IN OUT PUCHAR Ipv4PacketData, 
     IN USHORT OldId
     )
 /*++
@@ -336,35 +436,27 @@ Routine Description:
     
 Arguments:
 
-    IPv6Packet - Pointer to IPv6 packet memory, cannot be NULL
-    IPv4Packet - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
+    Ipv6PacketData - Pointer to IPv6 packet memory, cannot be NULL
+    Ipv4PacketData - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
     OldId - Original id pre-fetched by caller in receive handles
 
 Return Value:
 
-    Length of newly generated packet stored in IPv4Packet buffer
+    Length of newly generated packet stored in 'Ipv4PacketData' buffer
 
 --*/
 {
-    ETH_HEADER   *eh;
-    IP6_HEADER   *ip6h;
-    ICMP6_HEADER *icmp6h;
-    ETH_HEADER   *eh_4;
-    IP_HEADER    *ih;
-    ICMP_HEADER  *icmph;
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    ICMP6_HEADER *icmp6h = (ICMP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ETH_HEADER   *eh_4 = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    ICMP_HEADER  *icmph = (ICMP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     PUCHAR        data;
     PUCHAR        data_new;
     INT           data_size;
     BOOLEAN       ret, trans;
-    
-    // Point headers
-    eh     = (ETH_HEADER   *)(IPv6Packet);
-    ip6h   = (IP6_HEADER   *)(IPv6Packet + sizeof(ETH_HEADER));
-    icmp6h = (ICMP6_HEADER *)(IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    eh_4   = (ETH_HEADER   *)(IPv4Packet);
-    ih     = (IP_HEADER    *)(IPv4Packet + sizeof(ETH_HEADER));
-    icmph  = (ICMP_HEADER  *)(IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -372,7 +464,7 @@ Return Value:
     eh_4->type = htons(ETH_IP);
 
     // Build IPv4 header
-    ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih);
     ih->protocol = IP_ICMP;
 
     // Build ICMPv4 header
@@ -386,8 +478,8 @@ Return Value:
     icmph->id = htons(OldId);
     
     // Copy data
-    data       = IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
-    data_new   = IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
+    data       = Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
+    data_new   = Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
     data_size  = ntohs(ip6h->payload) - sizeof(ICMP6_HEADER);
     NdisMoveMemory(data_new, data, data_size);
     
@@ -397,30 +489,41 @@ Return Value:
     return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
-//
-// Translate IPv4 UDP packet into IPv6 UDP packet,
-// return packet size on success, return 0 if failed
-//
-UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
+
+UINT
+Udp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    IN OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv4 UDP packet into IPv6 UDP packet.
+    
+Arguments:
+
+    Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
+    Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
+    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+
+Return Value:
+
+    Length of the translated packet on success; return 0 if failed.
+
+--*/
 {
-    ETH_HEADER   *eh;
-    IP_HEADER    *ih;
-    UDP_HEADER   *uh;
-    ETH_HEADER   *eh_6;
-    IP6_HEADER   *ip6h;
-    UDP_HEADER   *uh_6;
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    UDP_HEADER   *uh = (UDP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
+    ETH_HEADER   *eh_6 = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    UDP_HEADER   *uh_6 = (UDP_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     INT           size;
     USHORT        newport;
     BOOLEAN       ret;
-    
-    // Point headers
-    eh     = (ETH_HEADER  *)(pPacket);
-    ih     = (IP_HEADER   *)(pPacket + sizeof(ETH_HEADER));
-    uh     = (UDP_HEADER  *)(pPacket + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
-    eh_6   = (ETH_HEADER  *)(pNewPacket);
-    ip6h   = (IP6_HEADER  *)(pNewPacket + sizeof(ETH_HEADER));
-    uh_6   = (UDP_HEADER  *)(pNewPacket + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_6->dmac, eh->dmac);
@@ -428,7 +531,7 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    ip4to6(ih, ip6h);
+    Ip4to6(ih, ip6h, mib);
     
     // Copy TCP header & data
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
@@ -452,9 +555,9 @@ UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket)
 
 UINT
 Udp6to4(
-    PUCHAR IPv6Packet, 
-    PUCHAR IPv4Packet, 
-    USHORT OldPort
+    IN PUCHAR Ipv6PacketData, 
+    IN OUT PUCHAR Ipv4PacketData, 
+    IN USHORT OldPort
     )
 /*++
 
@@ -464,33 +567,25 @@ Routine Description:
     
 Arguments:
 
-    IPv6Packet - Pointer to IPv6 packet memory, cannot be NULL
-    IPv4Packet - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
+    Ipv6PacketData - Pointer to IPv6 packet memory, cannot be NULL
+    Ipv4PacketData - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
     OldPort - Original port pre-fetched by caller in receive handles
 
 Return Value:
 
-    Length of newly generated packet stored in IPv4Packet buffer
+    Length of newly generated packet stored in 'Ipv4PacketData' buffer
 
 --*/
 {
-    ETH_HEADER   *eh;
-    IP6_HEADER   *ip6h;
-    UDP_HEADER   *uh;
-    ETH_HEADER   *eh_4;
-    IP_HEADER    *ih;
-    UDP_HEADER   *uh_4;
+    ETH_HEADER   *eh = (ETH_HEADER *)(Ipv6PacketData);
+    IP6_HEADER   *ip6h = (IP6_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER));
+    UDP_HEADER   *uh = (UDP_HEADER *)(Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
+    ETH_HEADER   *eh_4 = (ETH_HEADER *)(Ipv4PacketData);
+    IP_HEADER    *ih = (IP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER));
+    UDP_HEADER   *uh_4 = (UDP_HEADER *)(Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     INT           size;
     BOOLEAN       ret, trans;
-    
-    // Point headers
-    eh     = (ETH_HEADER  *)(IPv6Packet);
-    ip6h   = (IP6_HEADER  *)(IPv6Packet + sizeof(ETH_HEADER));
-    uh     = (UDP_HEADER  *)(IPv6Packet + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
-    eh_4   = (ETH_HEADER  *)(IPv4Packet);
-    ih     = (IP_HEADER   *)(IPv4Packet + sizeof(ETH_HEADER));
-    uh_4   = (UDP_HEADER  *)(IPv4Packet + sizeof(ETH_HEADER) + sizeof(IP_HEADER));
     
     // Build Ethernet header
     ETH_COPY_NETWORK_ADDRESS(eh_4->dmac, eh->dmac);
@@ -498,7 +593,7 @@ Return Value:
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-    ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih);
     
     // Copy UDP header & data
     size = ntohs(ip6h->payload);

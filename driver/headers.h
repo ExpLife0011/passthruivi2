@@ -170,4 +170,7 @@ typedef struct _UDP_HEADER
 #define ICMP6_ECHO        128
 #define ICMP6_ECHO_REPLY  129
 
+#define ICMP6_PREF_REQUEST    204
+#define ICMP6_PREF_RESPONSE   205  
+
 #endif // _HEADERS_H_

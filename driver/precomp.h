@@ -16,3 +16,4 @@
 #include "xlate.h"
 #include "portmap_tcp.h"
 #include "icmpmap.h"
+#include "prefix.h"

@@ -1,12 +1,14 @@
-#ifndef _XLATE_H
-#define _XLATE_H
+#ifndef _XLATE_H_
+#define _XLATE_H_
+
+#include "prefix.h"
 
 extern UCHAR    prefix[16];
 extern USHORT   prefix_length;
 extern USHORT   mod;
 extern UCHAR    mod_ratio;
 extern USHORT   res;
-extern UCHAR    gatewayMAC[6];
+extern UCHAR    GatewayMAC[6];
 extern UINT     enable_xlate;
 extern UINT     xlate_mode;
 
@@ -34,47 +36,64 @@ Return Value:
 #define IsIviAddress(_addr) NdisEqualMemory((_addr)->u.byte, prefix, prefix_length / 8)
 
 
-VOID
-IPAddr4to6(
-    PIN_ADDR  ip_addr, 
-    PIN6_ADDR ip6_addr, 
-    BOOLEAN   localip
+BOOLEAN
+IsEtherUnicast(
+    PUCHAR   mac
     );
-
-
-VOID ip4to6(IP_HEADER *ih, IP6_HEADER *ip6h);
 
 
 VOID
-IPAddr6to4(
-    PIN6_ADDR ip6_addr, 
-    PIN_ADDR  ip_addr
+IPAddr4to6(
+    IN PIN_ADDR  ip_addr, 
+    OUT PIN6_ADDR ip6_addr, 
+    IN PIVI_PREFIX_MIB mib
     );
 
 
-VOID ip6to4(IP6_HEADER *ip6h, IP_HEADER *ih);
+UINT
+Tcp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
+    );
 
-UINT tcp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
-UINT tcp6to4(PUCHAR pPacket, PUCHAR pNewPacket);
-UINT icmp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
+
+UINT
+Tcp6to4(
+    IN PUCHAR Ipv6PacketData, 
+    OUT PUCHAR Ipv4PacketData
+    );
+
+
+UINT
+Icmp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
+    );
 
 
 UINT
 Icmp6to4(
-    IN PUCHAR IPv6Packet, 
-    IN PUCHAR IPv4Packet, 
+    IN PUCHAR IPv6PacketData, 
+    IN OUT PUCHAR IPv4PacketData, 
     IN USHORT OldId
     );
 
 
-UINT udp4to6(PUCHAR pPacket, PUCHAR pNewPacket);
-
-
-UINT Udp6to4(
-    PUCHAR pPacket, 
-    PUCHAR pNewPacket, 
-    USHORT OldPort
+UINT
+Udp4to6(
+    IN PUCHAR Ipv4PacketData, 
+    OUT PUCHAR Ipv6PacketData,
+    IN PIVI_PREFIX_MIB mib
     );
 
 
-#endif // _XLATE_H
+UINT Udp6to4(
+    IN PUCHAR Ipv6PacketData, 
+    OUT PUCHAR Ipv4PacketData, 
+    IN USHORT OldPort
+    );
+
+
+#endif // _XLATE_H_

@@ -1067,7 +1067,7 @@ Routine Description:
         RemoveEntryList(temp);
         StateListLength--;
         NdisFreeMemory(pState, 0, 0);
-        DBGPRINT(("==> ResetTcpListsSafe: TCP state context memory freed.\n"));
+        //DBGPRINT(("==> ResetTcpListsSafe: TCP state context memory freed.\n"));
         // Go to next entry
     }
     
@@ -1121,7 +1121,7 @@ Routine Description:
         RemoveEntryList(temp);
         StateListLength--;
         NdisFreeMemory(pState, 0, 0);
-        DBGPRINT(("==> ResetTcpLists: TCP state context memory freed.\n"));
+        //DBGPRINT(("==> ResetTcpLists: TCP state context memory freed.\n"));
         // Go to next entry
     }
     
@@ -1209,7 +1209,7 @@ Routine Description:
             RemoveEntryList(temp);
             StateListLength--;
             NdisFreeMemory(pState, 0, 0);
-            DBGPRINT(("==> RefreshTcpListEntrySafe: TCP state context memory freed.\n"));
+            //DBGPRINT(("==> RefreshTcpListEntrySafe: TCP state context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -1272,7 +1272,7 @@ Routine Description:
             RemoveEntryList(temp);
             StateListLength--;
             NdisFreeMemory(pState, 0, 0);
-            DBGPRINT(("==> RefreshTcpListEntry: TCP state context memory freed.\n"));
+            //DBGPRINT(("==> RefreshTcpListEntry: TCP state context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -1363,7 +1363,7 @@ Return Value:
                 StateListLength--;
                 // Clear memory
                 NdisFreeMemory(StateContext, 0, 0);
-                DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+                //DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
                 NdisReleaseSpinLock(&StateListLock);
                 return 0;
             }
@@ -1445,7 +1445,7 @@ Return Value:
                       StateContext->OriginalPort, StateContext->MappedPort, StateContext->Translated, StateContext->Status));
             // Clear memory
             NdisFreeMemory(StateContext, 0, 0);
-            DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+            //DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
             NdisReleaseSpinLock(&StateListLock);
             return 0;
         }
@@ -1543,7 +1543,7 @@ Return Value:
                 StateListLength--;
                 // Clear memory
                 NdisFreeMemory(StateContext, 0, 0);
-                DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
+                //DBGPRINT(("==> GetTcpPortMapOut: StateContext memory freed.\n"));
                 NdisReleaseSpinLock(&StateListLock);
                 return 0;
             }

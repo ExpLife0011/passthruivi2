@@ -747,9 +747,9 @@ Return Value:
         PNDIS_PACKET    MyPacket;
         PRECV_RSVD      RecvRsvd;
 
-        PUCHAR              pPacketContent;
-        UINT                BufLength;
-        PNDIS_BUFFER        tempBuffer, MyBuffer;
+        PUCHAR          PacketData;
+        UINT            BufLength;
+        PNDIS_BUFFER    TempBuffer, MyBuffer;
     
 
         //DBGPRINT(("==> MPReturnPacket called.\n"));
@@ -760,17 +760,16 @@ Return Value:
         NdisUnchainBufferAtFront(Packet, &MyBuffer);
         while (MyBuffer != NULL)
         {
-            NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufLength, NormalPagePriority);
-        	if (pPacketContent != NULL)
+            NdisQueryBufferSafe(MyBuffer, &PacketData, &BufLength, NormalPagePriority);
+        	if (PacketData != NULL)
             {
-        		NdisFreeMemory(pPacketContent, BufLength, 0);
+        		NdisFreeMemory(PacketData, BufLength, 0);
             }
-            tempBuffer = MyBuffer;
-            NdisGetNextBuffer(tempBuffer, &MyBuffer);
-        	NdisFreeBuffer(tempBuffer);
-            //DBGPRINT(("==> MPReturnPacket: pPacketContent and MyBuffer freed.\n"));
+            TempBuffer = MyBuffer;
+            NdisGetNextBuffer(TempBuffer, &MyBuffer);
+        	NdisFreeBuffer(TempBuffer);
+            //DBGPRINT(("==> MPReturnPacket: PacketData and MyBuffer freed.\n"));
         }
-        
         NdisFreePacket(Packet);
         //DBGPRINT(("==> MPReturnPacket: Packet freed.\n"));
         

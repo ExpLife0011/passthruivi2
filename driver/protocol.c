@@ -894,14 +894,41 @@ Return Value:
 */
     {
         PSEND_RSVD        SendRsvd;
-        PUCHAR            pPacketContent;
-        PNDIS_BUFFER      MyBuffer;
+        PUCHAR            PacketData;
+        PNDIS_BUFFER      TempBuffer, MyBuffer;
         ULONG             BufLength;
 
 
         SendRsvd = (PSEND_RSVD)(Packet->ProtocolReserved);
         Pkt = SendRsvd->OriginalPkt;
-    
+        
+        if (Pkt == NULL)
+        {
+            //
+            // If 'Pkt' is NULL, then 'Packet' is the packet we 
+            // allocated and sent by ourselves. We can free our 
+            // own resources here and do not need to pass this 
+            // send complete info to upper protocol driver. Do 
+            // not decrease pAdapt->OutstandingSends since it is 
+            // not increased in SendPrefixLookupRequest().
+            //
+            NdisUnchainBufferAtFront(Packet, &MyBuffer);
+            while (MyBuffer != NULL)
+            {
+                NdisQueryBufferSafe(MyBuffer, &PacketData, &BufLength, NormalPagePriority);
+                if (PacketData != NULL)
+                {
+                    NdisFreeMemory(PacketData, BufLength, 0);
+                }
+                TempBuffer = MyBuffer;
+                NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                NdisFreeBuffer(TempBuffer);
+            }
+            NdisDprFreePacket(Packet);
+            DBGPRINT(("==> PtSendComplete: All resources freed for NULL OriginalPkt.\n"));
+            return;
+        }
+        
 #ifndef WIN9X
         NdisIMCopySendCompletePerPacketInfo (Pkt, Packet);
 #endif
@@ -916,26 +943,23 @@ Return Value:
         if (Pkt != Packet)
         {
         	NdisUnchainBufferAtFront(Packet, &MyBuffer);
-            if (MyBuffer != NULL)
+            while (MyBuffer != NULL)
             {
-                // this check is not necessary actually!
-                NdisQueryBufferSafe(MyBuffer, &pPacketContent, &BufLength, NormalPagePriority);
-                if (pPacketContent != NULL)
+                NdisQueryBufferSafe(MyBuffer, &PacketData, &BufLength, NormalPagePriority);
+                if (PacketData != NULL)
                 {
-                    NdisFreeMemory(pPacketContent, BufLength, 0);
+                    NdisFreeMemory(PacketData, BufLength, 0);
                 }
-                NdisFreeBuffer(MyBuffer);
-                //DBGPRINT(("==> PtSendComplete: pPacketContent and MyBuffer freed.\n"));
+                TempBuffer = MyBuffer;
+                NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                NdisFreeBuffer(TempBuffer);
+                //DBGPRINT(("==> PtSendComplete: PacketData and MyBuffer freed.\n"));
             }
       	}
-
-        
       	NdisDprFreePacket(Packet);
         //DBGPRINT(("==> PtSendComplete: Packet freed.\n"));
 
-        NdisMSendComplete(pAdapt->MiniportHandle,
-                                 Pkt,
-                                 Status);
+        NdisMSendComplete(pAdapt->MiniportHandle, Pkt, Status);
     }
     //
     // Decrease the outstanding send count

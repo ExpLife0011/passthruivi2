@@ -2,7 +2,7 @@
 #pragma hdrstop
 
 // UDP mapping time-out.
-LARGE_INTEGER     UdpTimeOut = { 30 MINS };
+LARGE_INTEGER     UdpTimeOut = { 5 MINS };   // See RFC 4787
 
 // Head of UDP port map list
 LIST_ENTRY        PortListHead;
@@ -82,7 +82,7 @@ Routine Description:
         RemoveEntryList(temp);
         PortListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetUdpListsSafe: map context memory freed.\n"));
+        //DBGPRINT(("==> ResetUdpListsSafe: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -136,7 +136,7 @@ Routine Description:
         RemoveEntryList(temp);
         PortListLength--;
         NdisFreeMemory(Map, 0, 0);
-        DBGPRINT(("==> ResetUdpLists: map context memory freed.\n"));
+        //DBGPRINT(("==> ResetUdpLists: map context memory freed.\n"));
         // Go to next entry
     }
     
@@ -195,7 +195,7 @@ Routine Description:
             RemoveEntryList(temp);
             PortListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshUdpListEntrySafe: map context memory freed.\n"));
+            //DBGPRINT(("==> RefreshUdpListEntrySafe: map context memory freed.\n"));
             // Go to next entry
         }
         else
@@ -253,7 +253,7 @@ Routine Description:
             RemoveEntryList(temp);
             PortListLength--;
             NdisFreeMemory(Map, 0, 0);
-            DBGPRINT(("==> RefreshUdpListEntry: map context memory freed.\n"));
+            //DBGPRINT(("==> RefreshUdpListEntry: map context memory freed.\n"));
             // Go to next entry
         }
         else
