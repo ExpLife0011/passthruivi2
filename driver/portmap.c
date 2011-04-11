@@ -280,9 +280,9 @@ Routine Description:
     
 Arguments:
 
-    original - Original UDP source port in outflow packet
-    trans - TRUE for 4to6 mapping; FLASE for 6to6 mapping
-    mapped - Pointer to caller-supplied memory that holds the returned mapping port
+    original - Original UDP source port in outflow packet.
+    trans - TRUE for 4to6 mapping; FLASE for 6to6 mapping.
+    mapped - Pointer to caller-supplied memory that holds the returned mapping port.
 
 Return Value:
 
@@ -315,7 +315,6 @@ Return Value:
             ret = Map->MappedPort;
             NdisGetCurrentSystemTime(&(Map->MapSetTime));  // refresh timer
             DBGPRINT(("==> GetUdpPortMapOut: Find Map %d -> %d\n", Map->OriginalPort, Map->MappedPort));
-            *mapped = ret;
         }
     }
     
@@ -323,9 +322,9 @@ Return Value:
     {
         if (PortListLength >= MaxPorts)
         {
+            NdisReleaseSpinLock(&PortListLock);
             DBGPRINT(("==> GetUdpPortMapOut: list full. Map id is used up.\n"));
             *mapped = 0;
-            NdisReleaseSpinLock(&PortListLock);
             return FALSE;
         }
         
@@ -363,8 +362,8 @@ Return Value:
             
             if (remaining <= 0)
             {
-                *mapped = 0;
                 NdisReleaseSpinLock(&PortListLock);
+                *mapped = 0;
                 return FALSE;
             }
         }
@@ -378,9 +377,9 @@ Return Value:
         Status = NdisAllocateMemoryWithTag((PVOID)&Map, sizeof(UDP_MAP_CONTEXT), TAG);
         if (Status != NDIS_STATUS_SUCCESS)
         {
+            NdisReleaseSpinLock(&PortListLock);
             // No memory for map info. Fail this map.
             DBGPRINT(("==> GetUdpPortMapOut: NdisAllocateMemoryWithTag failed for port %d\n", original));
-            NdisReleaseSpinLock(&PortListLock);
             *mapped = 0;
             return FALSE;
         }
@@ -400,10 +399,11 @@ Return Value:
         LastAllocatedUdpPort = ret;
         DBGPRINT(("==> GetUdpPortMapOut: New map %d -> %d added, xlate=%d.\n", 
                   Map->OriginalPort, Map->MappedPort, Map->Translated));
-        *mapped = ret;
     }
     
     NdisReleaseSpinLock(&PortListLock);
+    
+    *mapped = ret;
     
     return TRUE;
 }
@@ -436,6 +436,9 @@ Return Value:
 {
     BOOLEAN  flag = FALSE;
     
+    USHORT   OriginalPort = 0;
+    BOOLEAN  Translated = FALSE;
+    
     PUDP_MAP_CONTEXT  Map = NULL;
     
     NdisAcquireSpinLock(&PortListLock);
@@ -448,21 +451,18 @@ Return Value:
         Map = UdpPortMapInTable[mapped].Map;
         if (Map->MappedPort == mapped)  // Found existing mapping info
         {
-            *original = Map->OriginalPort;
-            *trans = Map->Translated;
+            OriginalPort = Map->OriginalPort;
+            Translated = Map->Translated;
             NdisGetCurrentSystemTime(&(Map->MapSetTime));  // refresh timer
             DBGPRINT(("==> GetUdpPortMapIn: Find Map %d -> %d, trans flag is %d.\n", Map->OriginalPort, Map->MappedPort, Map->Translated));
             flag = TRUE;
         }
     }
-    else
-    {
-        *original = 0;
-        *trans = FALSE;
-        flag = FALSE;
-    }
     
     NdisReleaseSpinLock(&PortListLock);
+    
+    *original = OriginalPort;
+    *trans = Translated;
     
     return flag;
 }

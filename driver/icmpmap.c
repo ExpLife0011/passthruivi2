@@ -269,9 +269,9 @@ Routine Description:
 
 BOOLEAN
 GetIcmpIdMapOut(
-    IN   USHORT  original,
-    IN   BOOLEAN trans,
-    OUT  PUSHORT mapped
+    IN   USHORT           original,
+    IN   BOOLEAN          trans,
+    OUT  PUSHORT          mapped
     )
 /*++
 
@@ -281,9 +281,9 @@ Routine Description:
     
 Arguments:
 
-    original - Original ICMP id in outflow packet
-    trans - TRUE for 4to6 mapping; FLASE for 6to6 mapping
-    mapped - Pointer to caller-supplied memory that holds the returned mapping id
+    original - Original ICMP id in outflow packet.
+    trans - TRUE for 4to6 mapping; FLASE for 6to6 mapping.
+    mapped - Pointer to caller-supplied memory that holds the returned mapping id.
 
 Return Value:
 
@@ -316,7 +316,6 @@ Return Value:
             ret = Map->MappedId;
             NdisGetCurrentSystemTime(&(Map->MapSetTime));  // refresh timer
             DBGPRINT(("==> GetIcmpIdMapOut: Find Map %d -> %d\n", Map->OriginalId, Map->MappedId));
-            *mapped = ret;
         }
     }
     
@@ -324,9 +323,9 @@ Return Value:
     {
         if (IdListLength >= MaxIds)
         {
+            NdisReleaseSpinLock(&IdListLock);
             DBGPRINT(("==> GetIcmpIdMapOut: list full. Map id is used up.\n"));
             *mapped = 0;
-            NdisReleaseSpinLock(&IdListLock);
             return FALSE;
         }
         
@@ -364,8 +363,8 @@ Return Value:
             
             if (remaining <= 0)
             {
-                *mapped = 0;
                 NdisReleaseSpinLock(&IdListLock);
+                *mapped = 0;
                 return FALSE;
             }
         }
@@ -379,9 +378,9 @@ Return Value:
         Status = NdisAllocateMemoryWithTag((PVOID)&Map, sizeof(ICMP_MAP_CONTEXT), TAG);
         if (Status != NDIS_STATUS_SUCCESS)
         {
+            NdisReleaseSpinLock(&IdListLock);
             // No memory for map info. Fail this map.
             DBGPRINT(("==> GetIcmpIdMapOut: NdisAllocateMemoryWithTag failed for id %d\n", original));
-            NdisReleaseSpinLock(&IdListLock);
             *mapped = 0;
             return FALSE;
         }
@@ -389,7 +388,7 @@ Return Value:
         
         // Routine to add new map-info
         Map->OriginalId = original;
-        Map->MappedId = ret;
+        Map->MappedId = ret; 
         Map->Translated = trans;
         NdisGetCurrentSystemTime(&(Map->MapSetTime));  // set timer for newly added mapping
         // Set hash table pointer
@@ -401,10 +400,11 @@ Return Value:
         LastAllocatedId = ret;
         DBGPRINT(("==> GetIcmpIdMapOut: New map %d -> %d added, xlate=%d.\n", 
                   Map->OriginalId, Map->MappedId, Map->Translated));
-        *mapped = ret;
     }
     
     NdisReleaseSpinLock(&IdListLock);
+    
+    *mapped = ret;
     
     return TRUE;
 }
@@ -412,9 +412,9 @@ Return Value:
 
 BOOLEAN
 GetIcmpIdMapIn(
-    IN  USHORT    mapped,
-    OUT PUSHORT   original,
-    OUT PBOOLEAN  trans
+    IN  USHORT            mapped,
+    OUT PUSHORT           original,
+    OUT PBOOLEAN          trans
     )
 /*++
 
@@ -430,12 +430,15 @@ Arguments:
 
 Return Value:
 
-    TRUE if find mapping is successful, original id is returned in 'original' pointer;
+    TRUE if find mapping is successful, caller-supplied pointers are filled with correct values;
     FALSE if no valid mapping exists for this mapped id, 'original' and 'trans' is set to 0(FALSE) in this case.
 
 --*/
 {
     BOOLEAN  flag = FALSE;
+    
+    USHORT   OriginalId = 0;
+    BOOLEAN  Translated = FALSE;
     
     PICMP_MAP_CONTEXT  Map = NULL;
     
@@ -449,21 +452,18 @@ Return Value:
         Map = IcmpIdMapInTable[mapped].Map;
         if (Map->MappedId == mapped)  // Found existing mapping info
         {
-            *original = Map->OriginalId;
-            *trans = Map->Translated;
+            OriginalId = Map->OriginalId;
+            Translated = Map->Translated;
             NdisGetCurrentSystemTime(&(Map->MapSetTime));  // refresh timer
             DBGPRINT(("==> GetIcmpIdMapIn: Find Map %d -> %d, trans flag is %d.\n", Map->OriginalId, Map->MappedId, Map->Translated));
             flag = TRUE;
         }
     }
-    else
-    {
-        *original = 0;
-        *trans = FALSE;
-        flag = FALSE;
-    }
     
     NdisReleaseSpinLock(&IdListLock);
+     
+    *original = OriginalId;
+    *trans = Translated;
     
     return flag;
 }

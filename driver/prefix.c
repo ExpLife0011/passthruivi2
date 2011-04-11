@@ -97,23 +97,25 @@ Routine Description:
 
 PPREFIX_LOOKUP_CONTEXT
 PrefixLookupAddr4(
-    IN PIN_ADDR                  Addr
+    IN PIN_ADDR       Addr,
+    IN BOOLEAN        CreateNew
     )
 /*++
 
 Routine Description:
 
-    Lookup prefix information in the prefix list. 
+    Lookup prefix information in the prefix list by the given IPv4 address.. 
     This function is NOT thread-safe.
     
 Arguments:
 
     Addr - Pointer to the IPv4 address that needs to be resolved
+    CreateNew - Indicate whether we should create an empty entry if no entry exists for this address
 
 Return Value:
 
-    If the entry is found, return pointer to this entry; otherwise, 
-    create a new empty entry and return pointer to the new entry.
+    If the entry is found, return pointer to this entry; otherwise, if 'CreateNew'  
+    is TRUE, create a new empty entry and return pointer to the new entry.
 
 --*/
 {
@@ -128,16 +130,21 @@ Return Value:
         
         if (PrefixContext->Mib.Address.u.dword == Addr->u.dword)
         {
-            // Found existing prefix entry for this address, may be invalid
+            // Found existing prefix entry for this address, may be unresolved.
             Context = PrefixContext;
             DBGPRINT(("==> PrefixLookupAddr4: prefix context for ip %d.%d.%d.%d found.\n", 
                       Context->Mib.Address.u.byte[0], Context->Mib.Address.u.byte[1], 
                       Context->Mib.Address.u.byte[2], Context->Mib.Address.u.byte[3]));
             break;
         }
+        else
+        {
+            // Go to next entry.
+            p = p->Flink;
+        }
     }
     
-    if (Context == NULL)
+    if (Context == NULL && CreateNew == TRUE)
     {
         // No entry found, create a new one and insert to list.
         NDIS_STATUS Status = NdisAllocateMemoryWithTag((PVOID)&Context, sizeof(PREFIX_LOOKUP_CONTEXT), TAG);
@@ -153,7 +160,7 @@ Return Value:
         Context->TryCount = 0;
         Context->Resolved = FALSE;
         Context->Mib.Address.u.dword = Addr->u.dword;
-        NdisGetCurrentSystemTime(&(Context->EntryCreateTime));
+        NdisGetCurrentSystemTime(&(Context->StateSetTime));
         Context->EntryTimeOut.QuadPart = InvalidEntryTimeOut.QuadPart;
         
         InsertTailList(&PrefixListHead, &(Context->ListEntry));
@@ -164,4 +171,222 @@ Return Value:
     }
     
     return Context;
+}
+
+
+PPREFIX_LOOKUP_CONTEXT
+PrefixLookupAddr6(
+    IN PIN6_ADDR       Addr
+    )
+/*++
+
+Routine Description:
+
+    Lookup prefix information in the prefix list by the given IPv6 address. 
+    This function is NOT thread-safe.
+    
+Arguments:
+
+    Addr - Pointer to the IPv6 address that needs to be resolved
+
+Return Value:
+
+    If the entry is found, return pointer to this entry; otherwise, return NULL.
+
+--*/
+{
+    PLIST_ENTRY p;
+    INT i;
+    BOOLEAN flag = TRUE;
+    INT PrefixLengthN;
+    
+    PPREFIX_LOOKUP_CONTEXT Context = NULL;
+    
+    p = PrefixListHead.Flink;
+    while (p != &PrefixListHead)
+    {
+        PPREFIX_LOOKUP_CONTEXT PrefixContext = CONTAINING_RECORD(p, PREFIX_LOOKUP_CONTEXT, ListEntry);
+        
+        PrefixLengthN = PrefixContext->Mib.PrefixLength / 8;
+        
+        // Compare prefix by bytes.
+        for (i = 0; i < PrefixLengthN; i++)
+        {
+            if (PrefixContext->Mib.Prefix.u.byte[i] != Addr->u.byte[i])
+            {
+                flag = FALSE;
+                break;
+            }
+        }
+        
+        if (flag == TRUE)
+        {
+            // Compare IPv4 embedded address.
+            for (i = 0; i < 4; i++)
+            {
+                if (PrefixContext->Mib.Address.u.byte[i] != Addr->u.byte[PrefixLengthN + i])
+                {
+                    flag = FALSE;
+                    break;
+                }
+            }
+        }
+        
+        if (flag == TRUE && PrefixContext->Mib.XlateMode == 1)
+        {
+            // Compare suffix code.
+            USHORT code = (Addr->u.byte[PrefixLengthN + 4] << 8) & 0xff00 
+                          + Addr->u.byte[PrefixLengthN + 5];
+            
+            if (code != PrefixContext->Mib.SuffixCode)
+            {
+                flag = FALSE;
+            }
+        }
+        
+        // Final step.
+        if (flag == TRUE)
+        {
+            // Address matches.
+            if (PrefixContext->Resolved == TRUE)
+            {
+                // Found existing prefix entry for this address
+                Context = PrefixContext;
+                DBGPRINT(("==> PrefixLookupAddr6: prefix context for ip %d.%d.%d.%d found.\n", 
+                          Context->Mib.Address.u.byte[0], Context->Mib.Address.u.byte[1], 
+                          Context->Mib.Address.u.byte[2], Context->Mib.Address.u.byte[3]));
+                break;
+            }
+            else
+            {
+                // Prefix info exists but is not resolved yet. No need to continue the compare loop.
+                break;
+            }
+        }
+        
+        // Go to next entry.
+        p = p->Flink;
+    }
+    
+    return Context;
+}
+
+
+PPREFIX_LOOKUP_CONTEXT
+ParsePrefixLookupResponse(
+    PICMP6_HEADER  Response,
+    INT            ResponseLength
+    )
+/*++
+
+Routine Description:
+
+    Parse prefix lookup response packet and fill the corresponding prefix mib.
+    This function is NOT thread-safe.
+    
+Arguments:
+
+    Response - Pointer to the ICMPv6 prefix lookup response packet.
+    ResponseLength - Length of the ICMPv6 header and options, that is, 
+                    the payload in the IPv6 header (in host byte order)
+
+Return Value:
+
+    If the response packet is valid and the corresponding entry is updated 
+    successfully, return pointer to the entry; otherwise, return NULL.
+
+--*/
+{
+    IN_ADDR                   TargetAddr;
+    PPREFIX_LOOKUP_CONTEXT    PrefixContext = NULL;
+    PUCHAR                    ptr = NULL;
+    INT                       optlen = ResponseLength - sizeof(ICMP6_HEADER);
+
+    if (optlen == 0)
+    {
+        return NULL;
+    }
+    
+    TargetAddr.u.dword = Response->u.addr;
+    
+    // Lookup the target address in the prefix context list
+    PrefixContext = PrefixLookupAddr4(&TargetAddr, FALSE);
+    
+    if (PrefixContext == NULL)
+    {
+        // Failed to find the prefix context corresponding to this response.
+        return NULL;
+    }
+    
+    // Parse options
+    ptr = (PUCHAR)(Response) + sizeof(ICMP6_HEADER);
+    
+    while (optlen > 0)
+    {
+        UCHAR optcode = *ptr;
+        UCHAR optsize = *(ptr + 1);
+        
+        if (optcode == PREF_OPT_PREFINFO && optsize == PREF_OPTLEN_PREFONFO)
+        {
+            // Prefix information option
+            PPREFIX_INFO_OPTION prefixinfo = (PPREFIX_INFO_OPTION)(ptr);
+             
+            // Update prefix context
+            NdisMoveMemory(&(PrefixContext->Mib.Prefix), &(prefixinfo->prefix), sizeof(IN6_ADDR));
+            PrefixContext->Mib.PrefixLength = prefixinfo->prefixlen;
+            PrefixContext->EntryTimeOut.QuadPart = ntohl(prefixinfo->ttl) * 10000000;
+            if ((prefixinfo->flag & PREFIX_INFO_MBIT) == 0)
+            {
+                // This prefix is for 1:1 mapping
+                PrefixContext->Mib.XlateMode = 0;
+                // This prefix info is complete after processing this option
+                PrefixContext->Resolved = TRUE;
+                // Ignore other options
+                break;
+            }
+            else
+            {
+                PrefixContext->Mib.XlateMode = 1;
+                //
+                // We still need port range information option.
+                // 'PrefixContext->Resolved' is set when we handle 
+                // the port range option. We will not touch it 
+                // here in case that the port range option appears 
+                // before the prefix info option.
+                //
+            }
+        }
+        else if (optcode == PREF_OPT_PORTRANGE && optsize == PREF_OPTLEN_PORTRANGE)
+        {
+            // Port range information option
+            PPORT_RANGE_OPTION portrange = (PPORT_RANGE_OPTION)(ptr);
+            
+            USHORT temp = portrange->ratio;
+            
+            // Update prefix context
+            PrefixContext->Mib.SuffixCode = 0;
+            while (temp >> 1 != 0)
+            {
+                PrefixContext->Mib.SuffixCode++;
+                temp = temp >> 1;
+            }
+            PrefixContext->Mib.SuffixCode = PrefixContext->Mib.SuffixCode << 12;
+            PrefixContext->Mib.SuffixCode += portrange->index & 0x0fff;
+            
+            // Set 'PrefixContext->Resolved' here and continue to look for prefix info option
+            PrefixContext->Resolved = TRUE;
+        }
+        else
+        {
+            // Response packet contains invalid option
+            PrefixContext = NULL;
+            break;
+        }
+        
+        // Move pointer to next option
+        optlen -= optsize * 8;
+        ptr += optsize * 8;
+    }
+    
+    return PrefixContext;
 }

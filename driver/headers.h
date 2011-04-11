@@ -70,8 +70,14 @@ typedef struct _ICMP_HEADER
     UCHAR  type;
     UCHAR  code;
     USHORT checksum;
-    USHORT id;
-    USHORT seq;
+    union
+    {
+        struct
+        {
+            USHORT id;
+            USHORT seq;
+        } echo;
+    } u;
 } ICMP_HEADER, *PICMP_HEADER;
 
 /* IPv6 address */
@@ -113,8 +119,15 @@ typedef struct _ICMP6_HEADER
     UCHAR  type;
     UCHAR  code;
     USHORT checksum;
-    USHORT id;
-    USHORT seq;
+    union
+    {
+        struct
+        {
+            USHORT id;
+            USHORT seq;
+        } echo;
+        ULONG addr;  // Target Address used by IVI prefix lookup
+    } u;
 } ICMP6_HEADER, *PICMP6_HEADER;
 
 /* TCP header */
@@ -169,8 +182,5 @@ typedef struct _UDP_HEADER
 /* ICMPv6 types */
 #define ICMP6_ECHO        128
 #define ICMP6_ECHO_REPLY  129
-
-#define ICMP6_PREF_REQUEST    204
-#define ICMP6_PREF_RESPONSE   205  
 
 #endif // _HEADERS_H_

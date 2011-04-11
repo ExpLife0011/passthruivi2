@@ -1133,35 +1133,6 @@ Routine Description:
 }
 
 
-BOOLEAN
-IsTimeOut(
-    IN PLARGE_INTEGER newtime,
-    IN PLARGE_INTEGER oldtime,
-    IN PLARGE_INTEGER timeout
-    )
-/*++
-
-Routine Description:
-
-    Check whether a state timer is timeout.
-    
-Arguments:
-
-    newtime - Pointer to current system time
-    oldtime - Pointer to system time when the current state is set
-    timeout - Pointer to TCP timeout value corresponding to current state
-
-Return Value:
-
-    Mapped port number if find mapping is successful,
-    0 if failed to find or create a mapping info.
-
---*/
-{
-    return (newtime->QuadPart - oldtime->QuadPart >= timeout->QuadPart);
-}
-
-
 VOID
 RefreshTcpListEntrySafe(
     VOID
@@ -1549,6 +1520,7 @@ Return Value:
             }
         }
     }
+    
     NdisReleaseSpinLock(&StateListLock);
     
     return ret;

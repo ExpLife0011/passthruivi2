@@ -184,9 +184,9 @@ Return Value:
         //
 		// Allocate a packet pool for Sends.
 		//
-        NdisAllocateBufferPool(	Status,
-								&pAdapt->SendBufferPoolHandle,
-								MIN_PACKET_POOL_SIZE);
+        NdisAllocateBufferPool(Status,
+                               &pAdapt->SendBufferPoolHandle,
+                               MIN_PACKET_POOL_SIZE);
 
         if (*Status != NDIS_STATUS_SUCCESS)
         {
@@ -196,9 +196,9 @@ Return Value:
 		//
         // Allocate a packet pool for Receives.
 		//
-        NdisAllocateBufferPool(	Status,
-								&pAdapt->RecvBufferPoolHandle,
-								MIN_PACKET_POOL_SIZE);
+        NdisAllocateBufferPool(Status,
+                               &pAdapt->RecvBufferPoolHandle,
+							   MIN_PACKET_POOL_SIZE);
 
         if (*Status != NDIS_STATUS_SUCCESS)
         {
@@ -287,19 +287,19 @@ Return Value:
 
                 if (LocalStatus == NDIS_STATUS_PENDING)
                 {
-                     NdisWaitEvent(&pAdapt->Event, 0);
-                     LocalStatus = pAdapt->Status;
+                    NdisWaitEvent(&pAdapt->Event, 0);
+                    LocalStatus = pAdapt->Status;
                 }
             }
 
             if (pAdapt->SendPacketPoolHandle != NULL)
             {
-                 NdisFreePacketPool(pAdapt->SendPacketPoolHandle);
+                NdisFreePacketPool(pAdapt->SendPacketPoolHandle);
             }
 
             if (pAdapt->RecvPacketPoolHandle != NULL)
             {
-                 NdisFreePacketPool(pAdapt->RecvPacketPoolHandle);
+                NdisFreePacketPool(pAdapt->RecvPacketPoolHandle);
             }
             
             if (LockAllocated == TRUE)
@@ -334,7 +334,7 @@ Arguments:
 
     ProtocolBindingContext    Pointer to the adapter
     Status                    Status of the NdisOpenAdapter call
-    OpenErrorStatus            Secondary status(ignored by us).
+    OpenErrorStatus           Secondary status(ignored by us).
 
 Return Value:
 
@@ -1027,10 +1027,8 @@ Return Value:
 --*/
 {
     PADAPT        pAdapt =(PADAPT)ProtocolBindingContext;
-    PNDIS_PACKET  PacketArray[MAX_RECEIVE_PACKET_ARRAY_SIZE];
-    ULONG         NumberOfPackets = 0, i;
 
-    //DBGPRINT(("==> PtReceiveComplete called!\n"));
+    //DBGPRINT(("==> PtReceiveComplete called.\n"));
     
     PtFlushReceiveQueue(pAdapt);
         
@@ -1436,7 +1434,6 @@ Return Value:
         if ((pAdapt->MiniportHandle != NULL) 
                 && (pAdapt->MPDeviceState == NdisDeviceStateD0))
         {
-                
             NdisMIndicateReceivePacket(pAdapt->MiniportHandle, PacketArray, NumberOfPackets);
         }
         else

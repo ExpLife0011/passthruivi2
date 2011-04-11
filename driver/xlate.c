@@ -32,7 +32,7 @@ Routine Description:
     
 Arguments:
 
-    mac - Pointer to the Ethernet MAC address
+    mac - Pointer to the Ethernet MAC address non-paged memory.
 
 Return Value:
 
@@ -60,9 +60,9 @@ Return Value:
 
 VOID
 IPAddr4to6(
-    IN PIN_ADDR  ip_addr, 
-    OUT PIN6_ADDR ip6_addr, 
-    IN PIVI_PREFIX_MIB mib
+    IN  PIN_ADDR         ip_addr, 
+    OUT PIN6_ADDR        ip6_addr, 
+    IN  PIVI_PREFIX_MIB  mib
     )
 /*++
 
@@ -109,9 +109,9 @@ Return Value:
 
 VOID
 Ip4to6(
-    IN PIP_HEADER ih, 
-    OUT PIP6_HEADER ip6h,
-    IN PIVI_PREFIX_MIB mib
+    IN  PIP_HEADER       ih, 
+    OUT PIP6_HEADER      ip6h,
+    IN  PIVI_PREFIX_MIB  mib
     )
 /*++
 
@@ -144,19 +144,21 @@ Return Value:
 
 VOID
 IPAddr6to4(
-    IN PIN6_ADDR ip6_addr, 
-    OUT PIN_ADDR  ip_addr
+    IN  PIN6_ADDR        ip6_addr, 
+    OUT PIN_ADDR         ip_addr,
+    IN  ULONG            prefix_len
     )
 /*++
 
 Routine Description:
 
-    Translate IPv6 address to IPv4 address. // XXX: should also use mib in this function
+    Translate IPv6 address to IPv4 address.
 
 Arguments:
 
     ip6_addr - Pointer to the IPv6 address that needs to be translated
     ip_addr - Pointer to the caller-supplied IPv4 address structure that holds the translated address
+    prefix_len - Length of the prefix of 'ip6_addr' counted in bits
 
 Return Value:
 
@@ -166,7 +168,9 @@ Return Value:
 {
     if (IsIviAddress(ip6_addr) == 1)
     {
-        NdisMoveMemory(ip_addr->u.byte, ip6_addr->u.byte + (prefix_length / 8), 4);
+        INT PrefixLengthN = prefix_len / 8;   // prefix length must be a multiple of 8
+        
+        NdisMoveMemory(ip_addr->u.byte, ip6_addr->u.byte + PrefixLengthN, 4);
     }
     else
     {
@@ -191,8 +195,9 @@ Return Value:
 
 VOID
 Ip6to4(
-    IN PIP6_HEADER ip6h, 
-    OUT PIP_HEADER ih
+    IN  PIP6_HEADER      ip6h, 
+    OUT PIP_HEADER       ih,
+    IN  ULONG            prefix_len
     )
 /*++
 
@@ -204,6 +209,7 @@ Arguments:
 
     ip6h - Pointer to the IPv6 header that needs to be translated
     ih - Pointer to the caller-supplied IPv4 header structure that holds the translated header
+    prefix_len - Length of the src address prefix, used when translating the src address in IPv6 header
 
 Return Value:
 
@@ -217,16 +223,16 @@ Return Value:
     ih->protocol = ip6h->nexthdr;
 
     // address translation
-    IPAddr6to4(&(ip6h->saddr), &(ih->saddr));
-    IPAddr6to4(&(ip6h->daddr), &(ih->daddr));
+    IPAddr6to4(&(ip6h->saddr), &(ih->saddr), prefix_len);
+    IPAddr6to4(&(ip6h->daddr), &(ih->daddr), LocalPrefixInfo.PrefixLength);  // Use local prefix info for dest address translation
 }
 
 
 UINT
 Tcp4to6(
-    IN PUCHAR Ipv4PacketData, 
-    IN OUT PUCHAR Ipv6PacketData,
-    IN PIVI_PREFIX_MIB mib
+    IN  PUCHAR           Ipv4PacketData, 
+    OUT PUCHAR           Ipv6PacketData,
+    IN  PIVI_PREFIX_MIB  PrefixMib
     )
 /*++
 
@@ -238,7 +244,7 @@ Arguments:
 
     Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
     Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
-    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+    PrefixMib - Pointer to IVI prefix mib for the destination address in IPv4 packet
 
 Return Value:
 
@@ -262,7 +268,7 @@ Return Value:
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    Ip4to6(ih, ip6h, mib);
+    Ip4to6(ih, ip6h, PrefixMib);
     
     // Copy TCP header & data
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
@@ -286,8 +292,8 @@ Return Value:
 
 UINT
 Tcp6to4(
-    IN PUCHAR Ipv6PacketData, 
-    IN OUT PUCHAR Ipv4PacketData
+    IN  PUCHAR Ipv6PacketData, 
+    OUT PUCHAR Ipv4PacketData
     )
 /*++
 
@@ -322,7 +328,7 @@ Return Value:
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-    Ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih, LocalPrefixInfo.PrefixLength);
     
     // Copy TCP header & data
     size = ntohs(ip6h->payload);
@@ -346,21 +352,21 @@ Return Value:
 
 UINT
 Icmp4to6(
-    IN PUCHAR Ipv4PacketData, 
-    IN OUT PUCHAR Ipv6PacketData,
-    IN PIVI_PREFIX_MIB mib
+    IN  PUCHAR           Ipv4PacketData, 
+    OUT PUCHAR           Ipv6PacketData,
+    IN  PIVI_PREFIX_MIB  PrefixMib
     )
 /*++
 
 Routine Description:
 
-    Translate IPv4 ICMP packet into IPv6 ICMP packet.
+    Translate IPv4 ICMP echo reqeust packet into IPv6 ICMP echo request packet.
     
 Arguments:
 
     Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
     Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
-    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+    PrefixMib - Pointer to IVI prefix mib for the destination address in IPv4 packet
 
 Return Value:
 
@@ -387,24 +393,24 @@ Return Value:
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    Ip4to6(ih, ip6h, mib);
+    Ip4to6(ih, ip6h, PrefixMib);
     ip6h->nexthdr = IP_ICMP6;
 
     // Build ICMPv6 header
     icmp6h->type = ((icmph->type == ICMP_ECHO) ? ICMP6_ECHO : ICMP6_ECHO_REPLY);
     icmp6h->code = 0;
     icmp6h->checksum = 0;
-    icmp6h->id = icmph->id;
-    icmp6h->seq = icmph->seq;
+    icmp6h->u.echo.id = icmph->u.echo.id;
+    icmp6h->u.echo.seq = icmph->u.echo.seq;
 
     // Id mapping
-    ret = GetIcmpIdMapOut(ntohs(icmph->id), TRUE, &new_id);
+    ret = GetIcmpIdMapOut(ntohs(icmph->u.echo.id), TRUE, &new_id);
     if (ret != TRUE)
     {
         DBGPRINT(("==> Icmp4to6: find map failed!\n"));
         return 0;
     }
-    icmp6h->id = htons(new_id);
+    icmp6h->u.echo.id = htons(new_id);
 
     // Copy data
     data       = Ipv4PacketData + sizeof(ETH_HEADER) + sizeof(IP_HEADER) + sizeof(ICMP_HEADER);
@@ -418,27 +424,26 @@ Return Value:
     return (sizeof(ETH_HEADER) + ntohs(ih->length) + 20);
 }
 
-//
-// Translate IPv6 ICMP packet into IPv4 ICMP packet, 
-// return packet_size on success, return 0 if failed
-//
+
 UINT
 Icmp6to4(
-    IN PUCHAR Ipv6PacketData, 
-    IN OUT PUCHAR Ipv4PacketData, 
-    IN USHORT OldId
+    IN  PUCHAR            Ipv6PacketData, 
+    OUT PUCHAR            Ipv4PacketData, 
+    IN  USHORT            OldId,
+    IN  ULONG             PrefixLength
     )
 /*++
 
 Routine Description:
 
-    Translate IPv6 ICMP packet into IPv4 ICMP packet.
+    Translate IPv6 ICMP echo reply packet into IPv4 ICMP echo reply packet.
     
 Arguments:
 
     Ipv6PacketData - Pointer to IPv6 packet memory, cannot be NULL
     Ipv4PacketData - Pointer to IPv4 packet memory allocated by caller, cannot be NULL
     OldId - Original id pre-fetched by caller in receive handles
+    PrefixLength - Length of the prefix for the src address in IPv6 packet header
 
 Return Value:
 
@@ -464,18 +469,18 @@ Return Value:
     eh_4->type = htons(ETH_IP);
 
     // Build IPv4 header
-    Ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih, PrefixLength);
     ih->protocol = IP_ICMP;
 
     // Build ICMPv4 header
     icmph->type = ((icmp6h->type == ICMP6_ECHO) ? ICMP_ECHO : ICMP_ECHO_REPLY);
     icmph->code = 0;
     icmph->checksum = 0;
-    icmph->id = icmp6h->id;
-    icmph->seq = icmp6h->seq;
+    icmph->u.echo.id = icmp6h->u.echo.id;
+    icmph->u.echo.seq = icmp6h->u.echo.seq;
     
     // Id mapping using pre-fetched original id
-    icmph->id = htons(OldId);
+    icmph->u.echo.id = htons(OldId);
     
     // Copy data
     data       = Ipv6PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) + sizeof(ICMP6_HEADER);
@@ -492,9 +497,9 @@ Return Value:
 
 UINT
 Udp4to6(
-    IN PUCHAR Ipv4PacketData, 
-    IN OUT PUCHAR Ipv6PacketData,
-    IN PIVI_PREFIX_MIB mib
+    IN  PUCHAR            Ipv4PacketData, 
+    OUT PUCHAR            Ipv6PacketData,
+    IN  PIVI_PREFIX_MIB   PrefixMib
     )
 /*++
 
@@ -506,7 +511,7 @@ Arguments:
 
     Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
     Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
-    mib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+    PrefixMib - Pointer to IVI prefix mib for the destination address in IPv4 packet
 
 Return Value:
 
@@ -531,7 +536,7 @@ Return Value:
     eh_6->type = htons(ETH_IP6);
     
     // Build IPv6 header
-    Ip4to6(ih, ip6h, mib);
+    Ip4to6(ih, ip6h, PrefixMib);
     
     // Copy TCP header & data
     size = ntohs(ih->length) - (ih->ver_ihl & 0x0f) * 4;
@@ -555,9 +560,9 @@ Return Value:
 
 UINT
 Udp6to4(
-    IN PUCHAR Ipv6PacketData, 
-    IN OUT PUCHAR Ipv4PacketData, 
-    IN USHORT OldPort
+    IN  PUCHAR Ipv6PacketData, 
+    OUT PUCHAR Ipv4PacketData, 
+    IN  USHORT OldPort
     )
 /*++
 
@@ -593,7 +598,7 @@ Return Value:
     eh_4->type = htons(ETH_IP);
     
     // Build IPv4 header
-    Ip6to4(ip6h, ih);
+    Ip6to4(ip6h, ih, LocalPrefixInfo.PrefixLength);
     
     // Copy UDP header & data
     size = ntohs(ip6h->payload);

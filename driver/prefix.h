@@ -7,7 +7,7 @@ typedef struct _IVI_PREFIX_MIB
     IN6_ADDR   Prefix;        // IPv6 prefix corresponding to the IPv4 address
     UCHAR      PrefixLength;  // Must be a multiple of 8
     UCHAR      XlateMode;     // 0 for 1:1 mapping, 1 for 1:N mapping
-    USHORT     SuffixCode;    // Compressed representation of Ratio and Index info; 0 for 1:1 mapping
+    USHORT     SuffixCode;    // Compressed representation of Ratio and Index info in host byte order; 0 for 1:1 mapping
 } IVI_PREFIX_MIB, *PIVI_PREFIX_MIB;
 
 #define PREFIX_LOOKUP_MAX_RETRIES   5
@@ -15,8 +15,8 @@ typedef struct _IVI_PREFIX_MIB
 typedef struct _PREFIX_LOOKUP_CONTEXT
 {
     LIST_ENTRY      ListEntry;
-    LARGE_INTEGER   EntryCreateTime;   // The time when this entry is created
-    LARGE_INTEGER   EntryTimeOut;      // Time-out value for this entry
+    LARGE_INTEGER   EntryTimeOut;      // Time-out value for this entry on the current state
+    LARGE_INTEGER   StateSetTime;      // The time when this entry enters the current state
     IVI_PREFIX_MIB  Mib;
     PUCHAR          HoldPacketData;    // Hold only most recent packet data; set to NULL after the prefix is resolved
     BOOLEAN         Resolved;          // Set to TRUE after the prefix is resolved for this entry
@@ -24,6 +24,38 @@ typedef struct _PREFIX_LOOKUP_CONTEXT
 } PREFIX_LOOKUP_CONTEXT, *PPREFIX_LOOKUP_CONTEXT;
 
 
+/* Prefix lookup protocol */
+typedef struct _PREFIX_INFO_OPTION
+{
+    UCHAR       type;
+    UCHAR       length;
+    UCHAR       prefixlen;
+    UCHAR       flag;
+    ULONG       ttl;
+    IN6_ADDR    prefix;
+} PREFIX_INFO_OPTION, *PPREFIX_INFO_OPTION;
+
+#define PREFIX_INFO_MBIT  0x80
+
+typedef struct _PORT_RANGE_OPTION
+{
+    UCHAR    type;
+    UCHAR    length;
+    USHORT   rsvd;
+    USHORT   ratio;
+    USHORT   index;
+} PORT_RANGE_OPTION, *PPORT_RANGE_OPTION;
+
+#define ICMP6_PREF_REQUEST    204
+#define ICMP6_PREF_RESPONSE   205
+
+#define PREF_OPT_PREFINFO       7
+#define PREF_OPT_PORTRANGE      8
+
+#define PREF_OPTLEN_PREFONFO    3
+#define PREF_OPTLEN_PORTRANGE   1
+
+/* Globals */
 extern LIST_ENTRY        PrefixListHead;
 extern NDIS_SPIN_LOCK    PrefixListLock;
 extern IVI_PREFIX_MIB    LocalPrefixInfo;
@@ -44,7 +76,20 @@ ResetPrefixList(
 
 PPREFIX_LOOKUP_CONTEXT
 PrefixLookupAddr4(
-    IN PIN_ADDR                  Addr
+    IN PIN_ADDR       Addr,
+    IN BOOLEAN        CreateNew
+    );
+
+PPREFIX_LOOKUP_CONTEXT
+PrefixLookupAddr6(
+    IN PIN6_ADDR       Addr
+    );
+
+
+PPREFIX_LOOKUP_CONTEXT
+ParsePrefixLookupResponse(
+    PICMP6_HEADER  Response,
+    INT            ResponseLength
     );
 
 

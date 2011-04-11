@@ -46,6 +46,7 @@ Return Value:
 
     USHORT            original = 0;   // original port or id
     BOOLEAN           is_translate = FALSE;
+    ULONG             prefix_len = 0;
     BOOLEAN           ret;
     UINT              PacketIndicateSize = 0;   // bytes need to be indicated up in the buffer
 
@@ -54,7 +55,6 @@ Return Value:
     if ((!pAdapt->MiniportHandle) || (pAdapt->MPDeviceState > NdisDeviceStateD0))
     {
         Status = NDIS_STATUS_FAILURE;
-        //DBGPRINT(("==> Status = NDIS_STATUS_FAILURE;\n"));
     }
     else do
     {
@@ -84,8 +84,8 @@ Return Value:
             // Get a packet off the pool and indicate that up
             //
             NdisDprAllocatePacket(&Status,
-                                &MyPacket,
-                                pAdapt->RecvPacketPoolHandle);
+                                  &MyPacket,
+                                  pAdapt->RecvPacketPoolHandle);
 
             if (Status == NDIS_STATUS_SUCCESS)
             {
@@ -95,11 +95,6 @@ Return Value:
                 RecvRsvd = (PRECV_RSVD)(MyPacket->MiniportReserved);
                 RecvRsvd->OriginalPkt = Packet;
                 
-                //
-                // Program usually falls through here!
-                // We should add our NAT codes here!
-                //
-                
                 // Query first buffer and total packet length
                 NdisGetFirstBufferFromPacketSafe(Packet, &MyBuffer, &TempPointer, &BufferLength, &PacketLength, NormalPagePriority);
                 if (TempPointer == NULL)
@@ -107,19 +102,19 @@ Return Value:
                     DBGPRINT(("==> PtReceive: NdisGetFirstBufferFromPacketSafe failed.\n"));
                     Status = NDIS_STATUS_FAILURE;
                     NdisDprFreePacket(MyPacket);
-                    return Status;
+                    break;
                 }
                 
                 // Allocate memory
                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketData, PacketLength, TAG);
                 if (Status != NDIS_STATUS_SUCCESS)
                 {
-                    DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed.\n"));
+                    DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed for PacketData.\n"));
                     Status = NDIS_STATUS_FAILURE;
                     NdisDprFreePacket(MyPacket);
-                    return Status;
+                    break;
                 }
-                NdisZeroMemory(PacketData, PacketLength);
+                //NdisZeroMemory(PacketData, PacketLength);
                 
                 // Copy packet content from buffer
                 NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -132,7 +127,6 @@ Return Value:
                     ContentOffset += BufferLength;
                     NdisGetNextBuffer(MyBuffer, &MyBuffer);
                 }
-                //DBGPRINT(("==> PtReceive: Get packet content success.\n"));
                 
                 // Set PacketIndicateSize
                 PacketIndicateSize = PacketLength;
@@ -151,12 +145,12 @@ Return Value:
                             // icmpv6 packet
                             PICMP6_HEADER icmp6h = (ICMP6_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
-                            DBGPRINT(("==> PtReceive: We receive a ICMPv6 packet.\n"));
-                            
-                            if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
+                            if (icmp6h->type == ICMP6_ECHO_REPLY) // Echo Reply
                             {
+                                DBGPRINT(("==> PtReceive: Receive a ICMPv6 echo reply packet.\n"));
+                                
                                 // Check the mapping list
-                                ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &original, &is_translate);
+                                ret = GetIcmpIdMapIn(ntohs(icmp6h->u.echo.id), &original, &is_translate);
                                 
                                 if (ret != TRUE)
                                 {
@@ -164,35 +158,54 @@ Return Value:
                                     Status = NDIS_STATUS_NOT_ACCEPTED;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                 
                                 if (is_translate != TRUE)
                                 {
                                     DBGPRINT(("==> PtReceive: Non-translated ICMPv6 id.\n"));
-                                    //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                                    //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->u.echo.id)));
                                     
-                                    icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
-                                    icmp6h->id = htons(original);
+                                    icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->u.echo.id), original);
+                                    icmp6h->u.echo.id = htons(original);
                                     
-                                    //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
+                                    //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->u.echo.id)));
                                     //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
                                 }
                                 else
                                 {
-                                    Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
-                                    if (Status != NDIS_STATUS_SUCCESS)
+                                    PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
+                                    
+                                    NdisAcquireSpinLock(&PrefixListLock);
+                                    // Look up the prefix for the src address
+                                    PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
+                                    if (PrefixContext == NULL)
                                     {
-                                        DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed with PacketDataNew. Drop packet.\n"));
+                                        // No entry found. Drop packet.
+                                        NdisReleaseSpinLock(&PrefixListLock);
+                                        DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
                                         Status = NDIS_STATUS_NOT_ACCEPTED;
                                         NdisFreeMemory(PacketData, 0, 0);
                                         NdisDprFreePacket(MyPacket);
-                                        return Status;
+                                        break;
+                                    }
+                                    prefix_len = PrefixContext->Mib.PrefixLength;
+                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    
+                                    // Allocate memory for translated packet
+                                    Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
+                                    if (Status != NDIS_STATUS_SUCCESS)
+                                    {
+                                        DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed for PacketDataNew. Drop packet.\n"));
+                                        Status = NDIS_STATUS_NOT_ACCEPTED;
+                                        NdisFreeMemory(PacketData, 0, 0);
+                                        NdisDprFreePacket(MyPacket);
+                                        break;
                                     }
                                     
                                     NdisZeroMemory(PacketDataNew, PacketLength);
                                     
-                                    PacketIndicateSize = Icmp6to4(PacketData, PacketDataNew, original);
+                                    PacketIndicateSize = Icmp6to4(PacketData, PacketDataNew, original, prefix_len);
                                     if (PacketIndicateSize == 0)
                                     {
                                         DBGPRINT(("==> PtReceive: Translate failed with Icmp6to4. Drop packet.\n"));
@@ -201,7 +214,7 @@ Return Value:
                                         NdisFreeMemory(PacketData, 0, 0);
                                         NdisFreeMemory(PacketDataNew, 0, 0);
                                         NdisDprFreePacket(MyPacket);
-                                        return Status;
+                                        break;
                                     }
                                     
                                     // Switch pointers and free old packet memory
@@ -209,15 +222,48 @@ Return Value:
                                     PacketData = PacketDataNew;
                                     PacketDataNew = TempPointer;
                                     NdisFreeMemory(PacketDataNew, 0, 0);
-                                    //DBGPRINT(("==> PtReceive: old packet memory freed.\n"));
                                 }
+                            }
+                            else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
+                            {
+                                PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
+                                PUCHAR                     HoldData = NULL;
+                                
+                                DBGPRINT(("==> PtReceive: Receive a ICMPv6 prefix lookup response packet.\n"));
+                                
+                                // Parse function is not thread-safe so we must acquire spin lock here.
+                                NdisAcquireSpinLock(&PrefixListLock);
+                                
+                                PrefixContext = ParsePrefixLookupResponse(icmp6h, ntohs(ip6h->payload));
+                                
+                                // Remove hold packet data from list and release spin lock.
+                                HoldData = PrefixContext->HoldPacketData;
+                                PrefixContext->HoldPacketData = NULL;
+                                NdisReleaseSpinLock(&PrefixListLock);
+                                
+                                if (HoldData != NULL)
+                                {
+                                    // XXX: we should send it out here!
+                                    NdisFreeMemory(HoldData, 0, 0);
+                                }
+                                
+                                //
+                                // We are done with the prefix lookup response. Do not 
+                                // indicate this packet up since it is only needed by 
+                                // our IM driver. Simply return and tell miniport receive 
+                                // is success.
+                                //
+                                Status = NDIS_STATUS_SUCCESS;
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                break;
                             }
                             else
                             {
                                 /*
                                  * Just let go
                                  *
-                                DBGPRINT(("==> PtReceive: Unkown ICMPv6 type, drop packet!\n"));
+                                DBGPRINT(("==> PtReceive: Unkown ICMPv6 type. Drop packet!\n"));
                                 Status = NDIS_STATUS_NOT_ACCEPTED;
                                 NdisFreeMemory(PacketData, 0, 0);
                                 NdisDprFreePacket(MyPacket);
@@ -231,7 +277,7 @@ Return Value:
                             PTCP_HEADER th = (TCP_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             PTCP_STATE_CONTEXT  StateContext;
                             
-                            DBGPRINT(("==> PtReceive: We receive a TCPv6 packet.\n"));
+                            DBGPRINT(("==> PtReceive: Receive a TCPv6 packet.\n"));
                             
                             // Check the mapping list
                             NdisAcquireSpinLock(&StateListLock);
@@ -255,7 +301,7 @@ Return Value:
                                     Status = NDIS_STATUS_NOT_ACCEPTED;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                                   
                                 th->checksum = ChecksumUpdate(ntohs(th->checksum), ntohs(th->dport), original);
@@ -266,14 +312,15 @@ Return Value:
                             }
                             else
                             {
+                                // Allocate memory for translated packet
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
                                 if (Status != NDIS_STATUS_SUCCESS)
                                 {
-                                    DBGPRINT(("==> PtReceive: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                                    DBGPRINT(("==> PtReceive: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
                                     Status = NDIS_STATUS_NOT_ACCEPTED;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                 
                                 NdisZeroMemory(PacketDataNew, PacketLength);
@@ -287,7 +334,7 @@ Return Value:
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisFreeMemory(PacketDataNew, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                 
                                 // Switch pointers and free old packet memory
@@ -295,7 +342,6 @@ Return Value:
                                 PacketData = PacketDataNew;
                                 PacketDataNew = TempPointer;
                                 NdisFreeMemory(PacketDataNew, 0, 0);
-                                //DBGPRINT(("==> PtReceive: old packet memory freed.\n"));
                             }
                         }
                         else if (ip6h->nexthdr == IP_UDP)
@@ -303,7 +349,7 @@ Return Value:
                             // udpv6 packet
                             PUDP_HEADER uh = (UDP_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
-                            DBGPRINT(("==> PtReceive: We receive a UDPv6 packet.\n"));
+                            DBGPRINT(("==> PtReceive: Receive a UDPv6 packet.\n"));
                             
                             // Check the mapping list
                             ret = GetUdpPortMapIn(ntohs(uh->dport), &original, &is_translate);
@@ -314,7 +360,7 @@ Return Value:
                                 Status = NDIS_STATUS_NOT_ACCEPTED;
                                 NdisFreeMemory(PacketData, 0, 0);
                                 NdisDprFreePacket(MyPacket);
-                                return Status;
+                                break;
                             }
                             
                             if (is_translate != TRUE)
@@ -331,14 +377,15 @@ Return Value:
                             }
                             else
                             {
+                                // Allocate memory for translated packet
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
                                 if (Status != NDIS_STATUS_SUCCESS)
                                 {
-                                    DBGPRINT(("==> PtReceive: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                                    DBGPRINT(("==> PtReceive: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
                                     Status = NDIS_STATUS_NOT_ACCEPTED;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                 
                                 NdisZeroMemory(PacketDataNew, PacketLength);
@@ -352,15 +399,14 @@ Return Value:
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisFreeMemory(PacketDataNew, 0, 0);
                                     NdisDprFreePacket(MyPacket);
-                                    return Status;
+                                    break;
                                 }
                                 
                                 // Switch pointers and free old packet memory
                                 TempPointer = PacketData;
                                 PacketData = PacketDataNew;
                                 PacketDataNew = TempPointer;
-                                NdisFreeMemory( PacketDataNew, 0, 0 );
-                                //DBGPRINT(("==> PtReceive: old packet memory freed.\n"));
+                                NdisFreeMemory(PacketDataNew, 0, 0);
                             }
                         }
                     }
@@ -369,11 +415,11 @@ Return Value:
                 NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->RecvBufferPoolHandle, PacketData, PacketIndicateSize);
                 if (Status != NDIS_STATUS_SUCCESS)
                 {
-                    DBGPRINT(("==> PtReceive: NdisAllocateBuffer failed.\n"));
+                    DBGPRINT(("==> PtReceive: NdisAllocateBuffer failed for PacketData.\n"));
                     Status = NDIS_STATUS_NOT_ACCEPTED;
                     NdisFreeMemory(PacketData, 0, 0);
                     NdisDprFreePacket(MyPacket);
-                    return Status;
+                    break;
                 }
                 
                 //
@@ -447,7 +493,6 @@ Return Value:
                     TempBuffer = MyBuffer;
                     NdisGetNextBuffer(TempBuffer, &MyBuffer);
                     NdisFreeBuffer(TempBuffer);
-                    //DBGPRINT(("==> PtReceive: PacketData and MyBuffer freed.\n"));
                 }
                 
                 //
@@ -457,6 +502,8 @@ Return Value:
                 //
                 NdisDprFreePacket(MyPacket);
 
+                // Indicate receive success when we return from this routine.
+                Status = NDIS_STATUS_SUCCESS;
                 break;
             }
         }
@@ -478,7 +525,6 @@ Return Value:
             // We are here because we failed to allocate packet
             //
             PtFlushReceiveQueue(pAdapt);
-            DBGPRINT(("==> PtReceive: PtFlushReceiveQueue(pAdapt);\n"));
         }
         //
         // Here the driver checks if the miniport adapter is in lower power state, do not indicate the 
@@ -579,6 +625,7 @@ Return Value:
     
     USHORT              original = 0;   // original port or id
     BOOLEAN             is_translate = FALSE;
+    ULONG               prefix_len = 0;
     BOOLEAN             ret;
     UINT                PacketIndicateSize = 0;   // bytes need to be sent in the buffer
 
@@ -590,8 +637,7 @@ Return Value:
     //
     if ((!pAdapt->MiniportHandle) || (pAdapt->MPDeviceState > NdisDeviceStateD0))
     {
-          //DBGPRINT(("==> !pAdapt->MiniportHandle\n"));
-          return 0;
+        return 0;
     }
 
 
@@ -623,11 +669,11 @@ Return Value:
         Status = NdisAllocateMemoryWithTag((PVOID)&PacketData, PacketLength, TAG);
         if (Status != NDIS_STATUS_SUCCESS)
         {
-            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed.\n"));
+            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed for PacketData.\n"));
             NdisDprFreePacket(MyPacket);
             return 0;
         }
-        NdisZeroMemory(PacketData, PacketLength);
+        //NdisZeroMemory(PacketData, PacketLength);
         
         // Copy packet content from buffer
         NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -640,7 +686,6 @@ Return Value:
             ContentOffset += BufferLength;
             NdisGetNextBuffer(MyBuffer, &MyBuffer);
         }
-        //DBGPRINT(("==> PtReceivePacket: Get packet content success.\n"));
         
         // Set PacketIndicateSize
         PacketIndicateSize = PacketLength;
@@ -659,12 +704,12 @@ Return Value:
                     // icmpv6 packet
                     PICMP6_HEADER icmp6h = (ICMP6_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                     
-                    DBGPRINT(("==> PtReceivePacket: We receive a ICMPv6 packet.\n"));
-                    
-                    if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
+                    if (icmp6h->type == ICMP6_ECHO_REPLY) // Echo Reply
                     {
+                        DBGPRINT(("==> PtReceivePacket: Receive a ICMPv6 echo reply packet.\n"));
+                        
                         // Check the mapping list
-                        ret = GetIcmpIdMapIn(ntohs(icmp6h->id), &original, &is_translate);
+                        ret = GetIcmpIdMapIn(ntohs(icmp6h->u.echo.id), &original, &is_translate);
                             
                         if (ret != TRUE)
                         {
@@ -677,20 +722,38 @@ Return Value:
                         if (is_translate != TRUE)  // 6to6 mapping
                         {
                             DBGPRINT(("==> PtReceivePacket: Non-translated ICMPv6 id.\n"));
-                            //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                            //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->u.echo.id)));
                             
-                            icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), original);
-                            icmp6h->id = htons(original);
+                            icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->u.echo.id), original);
+                            icmp6h->u.echo.id = htons(original);
                             
-                            //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->id)));
+                            //DBGPRINT(("==> New Id: %d\n", ntohs(icmp6h->u.echo.id)));
                             //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
                         }
                         else  // 6to4 mapping
                         {
-                            Status = NdisAllocateMemoryWithTag( (PVOID)&PacketDataNew, PacketLength, TAG );
+                            PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
+                            
+                            NdisAcquireSpinLock(&PrefixListLock);
+                            // Look up the prefix for the src address
+                            PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
+                            if (PrefixContext == NULL)
+                            {
+                                // No entry found. Drop packet.
+                                NdisReleaseSpinLock(&PrefixListLock);
+                                DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                return 0;
+                            }
+                            prefix_len = PrefixContext->Mib.PrefixLength;
+                            NdisReleaseSpinLock(&PrefixListLock);
+                            
+                            // Allocate memory for translated packet
+                            Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
                             if (Status != NDIS_STATUS_SUCCESS)
                             {
-                                DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed with PacketDataNew. Drop packet.\n"));
+                                DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed for PacketDataNew. Drop packet.\n"));
                                 NdisFreeMemory(PacketData, 0, 0);
                                 NdisDprFreePacket(MyPacket);
                                 return 0;
@@ -698,7 +761,7 @@ Return Value:
 
                             NdisZeroMemory(PacketDataNew, PacketLength);
                             
-                            PacketIndicateSize = Icmp6to4(PacketData, PacketDataNew, original);
+                            PacketIndicateSize = Icmp6to4(PacketData, PacketDataNew, original, prefix_len);
                             if (PacketIndicateSize == 0)
                             {
                                 DBGPRINT(("==> PtReceivePacket: Translate failed with Icmp6to4. Drop packet.\n"));
@@ -713,16 +776,48 @@ Return Value:
                             TempPointer = PacketData;
                             PacketData = PacketDataNew;
                             PacketDataNew = TempPointer;
-                            NdisFreeMemory( PacketDataNew, 0, 0 );
-                            //DBGPRINT(("==> PtReceivePacket: old packet memory freed.\n"));
+                            NdisFreeMemory(PacketDataNew, 0, 0);
                         }
+                    }
+                    else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
+                    {
+                        PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
+                        PUCHAR                     HoldData = NULL;
+                        
+                        DBGPRINT(("==> PtReceivePacket: Receive a ICMPv6 prefix lookup response packet.\n"));
+                        
+                        // Parse function is not thread-safe so we must acquire spin lock here.
+                        NdisAcquireSpinLock(&PrefixListLock);
+                        
+                        PrefixContext = ParsePrefixLookupResponse(icmp6h, ntohs(ip6h->payload));
+                        
+                        // Remove hold packet data from list and release spin lock.
+                        HoldData = PrefixContext->HoldPacketData;
+                        PrefixContext->HoldPacketData = NULL;
+                        NdisReleaseSpinLock(&PrefixListLock);
+                        
+                        if (HoldData != NULL)
+                        {
+                            // XXX: we should send it out here!
+                            NdisFreeMemory(HoldData, 0, 0);
+                        }
+                        
+                        //
+                        // We are done with the prefix lookup response. Do not 
+                        // indicate this packet up since it is only needed by 
+                        // our IM driver. Simply return and tell miniport receive 
+                        // is success.
+                        //
+                        NdisFreeMemory(PacketData, 0, 0);
+                        NdisDprFreePacket(MyPacket);
+                        return 0;
                     }
                     else
                     {
                         /*
                          * Just let go
                          *
-                        DBGPRINT(("==> PtReceivePacket: Unkown ICMPv6 type, drop packet.\n"));
+                        DBGPRINT(("==> PtReceivePacket: Unsupported ICMPv6 type. Drop packet.\n"));
                         NdisFreeMemory(PacketData, 0, 0);
                         NdisDprFreePacket(MyPacket);
                         return 0;
@@ -735,7 +830,7 @@ Return Value:
                     PTCP_HEADER th = (TCP_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                     PTCP_STATE_CONTEXT  StateContext;
                     
-                    DBGPRINT(("==> PtReceivePacket: We receive a TCPv6 packet.\n"));
+                    DBGPRINT(("==> PtReceivePacket: Receive a TCPv6 packet.\n"));
                     
                     // Check the mapping list
                     NdisAcquireSpinLock(&StateListLock);
@@ -769,10 +864,11 @@ Return Value:
                     }
                     else
                     {
+                        // Allocate memory for translated packet
                         Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
                         if (Status != NDIS_STATUS_SUCCESS)
                         {
-                            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
                             NdisFreeMemory(PacketData, 0, 0);
                             NdisDprFreePacket(MyPacket);
                             return 0;
@@ -795,8 +891,7 @@ Return Value:
                         TempPointer = PacketData;
                         PacketData = PacketDataNew;
                         PacketDataNew = TempPointer;
-                        NdisFreeMemory( PacketDataNew, 0, 0 );
-                        //DBGPRINT(("==> PtReceivePacket: old packet memory freed.\n"));
+                        NdisFreeMemory(PacketDataNew, 0, 0);
                     }
                     
                 }
@@ -805,7 +900,7 @@ Return Value:
                     // udpv6 packet
                     PUDP_HEADER uh = (UDP_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                     
-                    DBGPRINT(("==> PtReceivePacket: We receive a UDPv6 packet.\n"));
+                    DBGPRINT(("==> PtReceivePacket: Receive a UDPv6 packet.\n"));
                     
                     // Check the mapping list
                     ret = GetUdpPortMapIn(ntohs(uh->dport), &original, &is_translate);
@@ -832,10 +927,11 @@ Return Value:
                     }
                     else
                     {
+                        // Allocate memory for translated packet
                         Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
                         if (Status != NDIS_STATUS_SUCCESS)
                         {
-                            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                            DBGPRINT(("==> PtReceivePacket: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
                             NdisFreeMemory(PacketData, 0, 0);
                             NdisDprFreePacket(MyPacket);
                             return 0;
@@ -858,8 +954,7 @@ Return Value:
                         TempPointer = PacketData;
                         PacketData = PacketDataNew;
                         PacketDataNew = TempPointer;
-                        NdisFreeMemory( PacketDataNew, 0, 0 );
-                        //DBGPRINT(("==> PtReceivePacket: old packet memory freed.\n"));
+                        NdisFreeMemory(PacketDataNew, 0, 0);
                     }
                 }
             }
@@ -868,7 +963,7 @@ Return Value:
         NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->RecvBufferPoolHandle, PacketData, PacketIndicateSize);
         if (Status != NDIS_STATUS_SUCCESS)
         {
-            DBGPRINT(("==> PtReceivePacket: NdisAllocateBuffer failed.\n"));
+            DBGPRINT(("==> PtReceivePacket: NdisAllocateBuffer failed for PacketData.\n"));
             NdisFreeMemory(PacketData, 0, 0);
             NdisDprFreePacket(MyPacket);
             return 0;
@@ -928,7 +1023,6 @@ Return Value:
                 TempBuffer = MyBuffer;
                 NdisGetNextBuffer(TempBuffer, &MyBuffer);
                 NdisFreeBuffer(TempBuffer);
-                //DBGPRINT(("==> PtReceivePacket: PacketData and MyBuffer freed.\n"));
             }
 
             //

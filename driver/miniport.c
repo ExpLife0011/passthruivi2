@@ -720,9 +720,9 @@ Return Value:
 
 --*/
 {
+/* Packet reuse is intentionally disabled, see PtReceivePacket in protocol.c
     PADAPT            pAdapt = (PADAPT)MiniportAdapterContext;
 
-/* Packet reuse is intentionally disabled, see PtReceivePacket in protocol.c
 #ifdef NDIS51
     //
     // Packet stacking: Check if this packet belongs to us.
@@ -744,7 +744,7 @@ Return Value:
         // Reclaim our packet, and return the original to the driver below.
         //
 
-        PNDIS_PACKET    MyPacket;
+        PNDIS_PACKET    MyPacket;   // Packet allocated by upper protocol and we stored in 'Packet->MiniportReserved'
         PRECV_RSVD      RecvRsvd;
 
         PUCHAR          PacketData;

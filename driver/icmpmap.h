@@ -5,8 +5,8 @@ typedef struct _ICMP_MAP_CONTEXT
 {
     LIST_ENTRY        ListEntry;    // Linked to ICMP map list
     // Indexes pointing back to id hash table
-    USHORT            OriginalId;   // Index for IcmpIdMapOutTable, recording local id
-    USHORT            MappedId;     // Index for IcmpIdMapInTable, recording mapped id
+    USHORT            OriginalId;   // Index for IcmpIdMapOutTable, recording local id.
+    USHORT            MappedId;     // Index for IcmpIdMapInTable, recording mapped id.
     LARGE_INTEGER     MapSetTime;   // The time when the current map is set
     BOOLEAN           Translated;   // TRUE for 4to6 map; FALSE for 6to6 map.
 } ICMP_MAP_CONTEXT, *PICMP_MAP_CONTEXT;
@@ -57,16 +57,16 @@ RefreshIcmpListEntry(
 
 BOOLEAN
 GetIcmpIdMapOut(
-    IN   USHORT   original,
-    IN   BOOLEAN  trans,
-    OUT  PUSHORT  mapped
+    IN   USHORT           original,
+    IN   BOOLEAN          trans,
+    OUT  PUSHORT          mapped
     );
 
 BOOLEAN
 GetIcmpIdMapIn(
-    IN  USHORT    mapped,
-    OUT PUSHORT   original,
-    OUT PBOOLEAN  trans
+    IN  USHORT            mapped,
+    OUT PUSHORT           original,
+    OUT PBOOLEAN          trans
     );
 
 #endif // _ICMPMAP_H_

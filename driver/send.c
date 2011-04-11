@@ -120,7 +120,7 @@ Return Value:
                     ADAPT_DECR_PENDING_SENDS(pAdapt);
                     break;
                 }
-                NdisZeroMemory(PacketData, PacketLength);
+                //NdisZeroMemory(PacketData, PacketLength);
                 
                 // Copy packet content from buffer
                 NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -161,7 +161,7 @@ Return Value:
                         
                         NdisAcquireSpinLock(&PrefixListLock);
                         // Look up the prefix for the destination address
-                        PrefixContext = PrefixLookupAddr4(&(ih->daddr));
+                        PrefixContext = PrefixLookupAddr4(&(ih->daddr), TRUE);
                         if (PrefixContext == NULL)
                         {
                             // Failed to find or create an entry. Drop packet.
@@ -246,15 +246,14 @@ Return Value:
                             req_icmp6h->type = ICMP6_PREF_REQUEST;
                             req_icmp6h->code = 0;
                             req_icmp6h->checksum = 0;
-                            // XXX: should use union in ICMPv6 header
-                            req_icmp6h->id = ih->daddr.u.word[0];
-                            req_icmp6h->seq = ih->daddr.u.word[1];
+                            req_icmp6h->u.addr = ih->daddr.u.dword;
                             checksum_icmp6(req_ip6h, req_icmp6h);
                             
                             // Allocate buffer.
                             NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->SendBufferPoolHandle, MyData, MyPacketSize);
                             if (Status != NDIS_STATUS_SUCCESS)
                             {
+                                NdisReleaseSpinLock(&PrefixListLock);
                                 DBGPRINT(("==> MPSendPackets: NdisAllocateBuffer failed for MyData.\n"));
                                 // XXX: we won't touch prefix context if we fail to allocate buffer for a request packet.
                                 Status = NDIS_STATUS_FAILURE;
@@ -323,35 +322,61 @@ Return Value:
                         }
                         else
                         {
-                            // This entry is valid, use it
-                            PIVI_PREFIX_MIB Mib = &(PrefixContext->Mib);
+                            //
+                            // Copy the prefix mib entry to a new allocated memory.
+                            // The memory of original prefix mib stored in the list may be
+                            // freed by another thread after we release the spin lock.
+                            //
+                            PIVI_PREFIX_MIB         Mib = NULL;
+                            
+                            Status = NdisAllocateMemoryWithTag((PVOID)&Mib, sizeof(IVI_PREFIX_MIB), TAG);
+                            if (Status != NDIS_STATUS_SUCCESS)
+                            {
+                                NdisReleaseSpinLock(&PrefixListLock);
+                                DBGPRINT(("==> MPSendPackets: NdisAllocateMemoryWithTag failed for Mib. Drop packet.\n"));
+                                Status = NDIS_STATUS_FAILURE;
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisFreePacket(MyPacket);
+                                ADAPT_DECR_PENDING_SENDS(pAdapt);
+                                break;
+                            }
+                            NdisMoveMemory(Mib, &(PrefixContext->Mib), sizeof(IVI_PREFIX_MIB));
+                            
+                            NdisReleaseSpinLock(&PrefixListLock);
                             
                             if (ih->protocol == IP_ICMP)
                             {
                                 // ICMPv4 packet
                                 PICMP_HEADER icmph = (ICMP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
                                 
-                                DBGPRINT(("==> MPSendPackets: We send an ICMPv4 packet.\n"));
+                                DBGPRINT(("==> MPSendPackets: Send an ICMPv4 packet.\n"));
                                 
-                                if (icmph->type == ICMP_ECHO || icmph->type == ICMP_ECHO_REPLY) // Echo/Echo Reply Request
+                                if (icmph->type == ICMP_ECHO) // Echo Request
                                 {
                                     Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
                                     if (Status != NDIS_STATUS_SUCCESS)
                                     {
-                                        DBGPRINT(("==> MPSendPackets: NdisAllocateMemoryWithTag failed with PacketDataNew. Drop packet.\n"));
+                                        DBGPRINT(("==> MPSendPackets: NdisAllocateMemoryWithTag failed for PacketDataNew. Drop packet.\n"));
+                                        
+                                        // Free prefix mib memory.
+                                        NdisFreeMemory(Mib, 0, 0);
+                                        
                                         Status = NDIS_STATUS_FAILURE;
                                         NdisFreeMemory(PacketData, 0, 0);
                                         NdisFreePacket(MyPacket);
                                         ADAPT_DECR_PENDING_SENDS(pAdapt);
                                         break;
                                     }
-                                    
                                     NdisZeroMemory(PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD);
                                     
                                     PacketSendSize = Icmp4to6(PacketData, PacketDataNew, Mib);
                                     if (PacketSendSize == 0)
                                     {
                                         DBGPRINT(("==> MPSendPackets: Translate failed with Icmp4to6. Drop packet.\n"));
+                                        
+                                        // Free prefix mib memory.
+                                        NdisFreeMemory(Mib, 0, 0);
+                                        
                                         Status = NDIS_STATUS_FAILURE;
                                         // Notice: we have two memory to free here!
                                         NdisFreeMemory(PacketData, 0, 0);
@@ -361,16 +386,22 @@ Return Value:
                                         break;
                                     }
                                     
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     // Switch pointers and free old packet memory
                                     TempPointer = PacketData;
                                     PacketData = PacketDataNew;
                                     PacketDataNew = TempPointer;
                                     NdisFreeMemory( PacketDataNew, 0, 0 );
-                                    //DBGPRINT(("==> MPSendPackets: old packet memory freed.\n"));
                                 }
                                 else
                                 {
-                                    DBGPRINT(("==> MPSendPackets: Unkown icmp type, drop packet.\n"));
+                                    DBGPRINT(("==> MPSendPackets: Unsupported icmp type. Drop packet.\n"));
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     Status = NDIS_STATUS_FAILURE;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisFreePacket(MyPacket);
@@ -383,25 +414,32 @@ Return Value:
                                 // TCPv4 packet
                                 PTCP_HEADER th = (TCP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
                                 
-                                DBGPRINT(("==> MPSendPackets: We send a TCPv4 packet.\n"));
+                                DBGPRINT(("==> MPSendPackets: Send a TCPv4 packet.\n"));
                                 
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
                                 if (Status != NDIS_STATUS_SUCCESS)
                                 {
-                                    DBGPRINT(("==> MPSendPackets: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                                    DBGPRINT(("==> MPSendPackets: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     Status = NDIS_STATUS_FAILURE;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisFreePacket(MyPacket);
                                     ADAPT_DECR_PENDING_SENDS(pAdapt);
                                     break;
                                 }
-                                
                                 NdisZeroMemory(PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD);
                                 
                                 PacketSendSize = Tcp4to6(PacketData, PacketDataNew, Mib);
                                 if (PacketSendSize == 0)
                                 {
                                     DBGPRINT(("==> MPSendPackets: Translate failed with Tcp4to6. Drop packet.\n"));
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     Status = NDIS_STATUS_FAILURE;
                                     // Notice: we have two memory to free here!
                                     NdisFreeMemory(PacketData, 0, 0);
@@ -411,38 +449,46 @@ Return Value:
                                     break;
                                 }
                                 
+                                // Free prefix mib memory.
+                                NdisFreeMemory(Mib, 0, 0);
+                                
                                 // Switch pointers and free old packet memory
                                 TempPointer = PacketData;
                                 PacketData = PacketDataNew;
                                 PacketDataNew = TempPointer;
                                 NdisFreeMemory(PacketDataNew, 0, 0);
-                                //DBGPRINT(("==> MPSendPackets: old packet memory freed.\n"));
-                                
                             }
                             else if (ih->protocol == IP_UDP)
                             {
                                 // UDPv4 packet
                                 PUDP_HEADER uh = (UDP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
                                 
-                                DBGPRINT(("==> MPSendPackets: We send a UDPv4 packet.\n"));
+                                DBGPRINT(("==> MPSendPackets: Send a UDPv4 packet.\n"));
                                 
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
                                 if (Status != NDIS_STATUS_SUCCESS)
                                 {
-                                    DBGPRINT(("==> MPSendPackets: NdisAllocateMemory failed with PacketDataNew. Drop packet.\n"));
+                                    DBGPRINT(("==> MPSendPackets: NdisAllocateMemory failed for PacketDataNew. Drop packet.\n"));
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     Status = NDIS_STATUS_FAILURE;
                                     NdisFreeMemory(PacketData, 0, 0);
                                     NdisFreePacket(MyPacket);
                                     ADAPT_DECR_PENDING_SENDS(pAdapt);
                                     break;
                                 }
-                                
                                 NdisZeroMemory(PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD);
                                 
                                 PacketSendSize = Udp4to6(PacketData, PacketDataNew, Mib);
                                 if (PacketSendSize == 0)
                                 {
-                                    DBGPRINT(("==> MPSendPackets: Translate failed with udp4to6. Drop packet.\n"));
+                                    DBGPRINT(("==> MPSendPackets: Translate failed with Udp4to6. Drop packet.\n"));
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
                                     Status = NDIS_STATUS_FAILURE;
                                     // Notice: we have two memory to free here!
                                     NdisFreeMemory(PacketData, 0, 0);
@@ -452,16 +498,22 @@ Return Value:
                                     break;
                                 }
                                 
+                                // Free prefix mib memory.
+                                NdisFreeMemory(Mib, 0, 0);
+                                
                                 // Switch pointers and free old packet memory
                                 TempPointer = PacketData;
                                 PacketData = PacketDataNew;
                                 PacketDataNew = TempPointer;
                                 NdisFreeMemory(PacketDataNew, 0, 0);
-                                //DBGPRINT(("==> MPSendPackets: old packet memory freed.\n"));
                             }
                             else
                             {
                                 DBGPRINT(("==> MPSendPackets: Unkown protocol type. Drop packet.\n"));
+                                
+                                // Free prefix mib memory.
+                                NdisFreeMemory(Mib, 0, 0);
+                                
                                 Status = NDIS_STATUS_FAILURE;
                                 NdisFreeMemory(PacketData, 0, 0);
                                 NdisFreePacket(MyPacket);
@@ -485,7 +537,7 @@ Return Value:
                     {
                         PARP_HEADER ah = (ARP_HEADER *)(PacketData + sizeof(ETH_HEADER));
                         
-                        //DBGPRINT(("==> MPSendPackets: We send an ARP packet.\n"));
+                        //DBGPRINT(("==> MPSendPackets: Send an ARP packet.\n"));
                         
                         DBGPRINT(("==> MPSendPackets: ARP Source MAC is %02x:%02x:%02x:%02x:%02x:%02x.\n", 
                                     eh->smac[0], eh->smac[1], eh->smac[2], 
@@ -574,6 +626,7 @@ Return Value:
                             PtQueueReceivedPacket(pAdapt, MyPacket, TRUE);
                             DBGPRINT(("==> MPSendPackets: ARP reply is indicated.\n"));
                             
+                            // We can free resources right now since we queued the packet with true flag.
                             NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
                             while (MyBuffer != NULL)
                             {
@@ -585,11 +638,8 @@ Return Value:
                                 TempBuffer = MyBuffer;
                                 NdisGetNextBuffer(TempBuffer, &MyBuffer);
                                 NdisFreeBuffer(TempBuffer);
-                                //DBGPRINT(("==> MPSendPackets: PacketData and MyBuffer are freed for ARP.\n"));
                             }
-                            
                             NdisFreePacket(MyPacket);
-                            //DBGPRINT(("==> MPSendPackets: MyPacket is freed for ARP.\n"));
                         }
                         
                         return;
@@ -616,7 +666,7 @@ Return Value:
                             
                             INT SegmentSize = ntohs(ip6h->payload);   // Payload size is needed in determining TCP connection state
                             
-                            DBGPRINT(("==> MPSendPackets: We send a TCPv6 packet.\n"));
+                            DBGPRINT(("==> MPSendPackets: Send a TCPv6 packet.\n"));
                             
                             //DBGPRINT(("==> Old source port: %d\n", ntohs(th->sport)));
                             //DBGPRINT(("==> Old checksum: %02x\n", th->checksum));
@@ -644,7 +694,7 @@ Return Value:
                             // udpv6 packet
                             PUDP_HEADER uh = (UDP_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
-                            DBGPRINT(("==> MPSendPackets: We send a UDPv6 packet.\n"));
+                            DBGPRINT(("==> MPSendPackets: Send a UDPv6 packet.\n"));
                             
                             //DBGPRINT(("==> Old source port: %d\n", ntohs(uh->sport)));
                             //DBGPRINT(("==> Old checksum: %02x\n", uh->checksum));
@@ -672,14 +722,14 @@ Return Value:
                             // icmpv6 packet
                             PICMP6_HEADER icmp6h = (ICMP6_HEADER *)( PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) );
                             
-                            DBGPRINT(("==> MPSendPackets: We send an ICMPv6 packet.\n")); 
+                            DBGPRINT(("==> MPSendPackets: Send an ICMPv6 packet.\n")); 
                             
-                            if (icmp6h->type == ICMP6_ECHO || icmp6h->type == ICMP6_ECHO_REPLY) // Echo/Echo Reply Request
+                            if (icmp6h->type == ICMP6_ECHO) // Echo Request
                             {
-                                //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->id)));
+                                //DBGPRINT(("==> Old Id: %d\n", ntohs(icmp6h->u.echo.id)));
                                 //DBGPRINT(("==> Old checksum: %02x\n", icmp6h->checksum));
                                 
-                                ret = GetIcmpIdMapOut(ntohs(icmp6h->id), FALSE, &mapped);
+                                ret = GetIcmpIdMapOut(ntohs(icmp6h->u.echo.id), FALSE, &mapped);
                                 
                                 if (ret != TRUE)
                                 {
@@ -691,8 +741,8 @@ Return Value:
                                     break;
                                 }
                                 
-                                icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->id), mapped);;
-                                icmp6h->id = htons(mapped);
+                                icmp6h->checksum = ChecksumUpdate(ntohs(icmp6h->checksum), ntohs(icmp6h->u.echo.id), mapped);;
+                                icmp6h->u.echo.id = htons(mapped);
                                 
                                 //DBGPRINT(("==> New id: %d\n", mapped));
                                 //DBGPRINT(("==> New checksum: %02x\n", icmp6h->checksum));
@@ -704,7 +754,7 @@ Return Value:
                 NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->SendBufferPoolHandle, PacketData, PacketSendSize);
                 if (Status != NDIS_STATUS_SUCCESS)
                 {
-                    DBGPRINT(("==> MPSendPackets: NdisAllocateBuffer failed.\n"));
+                    DBGPRINT(("==> MPSendPackets: NdisAllocateBuffer failed for PacketData.\n"));
                     Status = NDIS_STATUS_FAILURE;
                     NdisFreeMemory(PacketData, 0, 0);
                     NdisFreePacket(MyPacket);
@@ -769,7 +819,6 @@ Return Value:
 #ifndef WIN9X
                     NdisIMCopySendCompletePerPacketInfo (Packet, MyPacket);
 #endif
-                    
                     NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
                     while (MyBuffer != NULL)
                     {

@@ -155,13 +155,6 @@ ResetTcpLists(
     VOID
     );
 
-BOOLEAN
-IsTimeOut(
-    IN PLARGE_INTEGER newtime,
-    IN PLARGE_INTEGER oldtime,
-    IN PLARGE_INTEGER timeout
-    );
-
 VOID
 RefreshTcpListEntrySafe(
     VOID
