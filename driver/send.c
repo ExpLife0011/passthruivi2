@@ -255,12 +255,13 @@ Return Value:
                             {
                                 NdisReleaseSpinLock(&PrefixListLock);
                                 DBGPRINT(("==> MPSendPackets: NdisAllocateBuffer failed for MyData.\n"));
-                                // XXX: we won't touch prefix context if we fail to allocate buffer for a request packet.
+                                // XXX: we won't touch prefix context if we fail to allocate buffer for the request packet.
                                 Status = NDIS_STATUS_FAILURE;
                                 // Notice: we have two memory to free here.
                                 NdisFreeMemory(MyData, 0, 0);
                                 NdisFreeMemory(PacketData, 0, 0);
                                 NdisFreePacket(MyPacket);
+                                ADAPT_DECR_PENDING_SENDS(pAdapt);
                                 break;
                             }
                             

@@ -128,7 +128,7 @@ Return Value:
     {
         PPREFIX_LOOKUP_CONTEXT PrefixContext = CONTAINING_RECORD(p, PREFIX_LOOKUP_CONTEXT, ListEntry);
         
-        if (PrefixContext->Mib.Address.u.dword == Addr->u.dword)
+        if ((Addr->u.dword & PrefixContext->Mib.Mask) == (PrefixContext->Mib.Address.u.dword & PrefixContext->Mib.Mask))
         {
             // Found existing prefix entry for this address, may be unresolved.
             Context = PrefixContext;
@@ -160,12 +160,13 @@ Return Value:
         Context->TryCount = 0;
         Context->Resolved = FALSE;
         Context->Mib.Address.u.dword = Addr->u.dword;
+        Context->Mib.Mask = 0xffffffff;  // Init to 32bit IPv4 prefix length
         NdisGetCurrentSystemTime(&(Context->StateSetTime));
         Context->EntryTimeOut.QuadPart = InvalidEntryTimeOut.QuadPart;
         
         InsertTailList(&PrefixListHead, &(Context->ListEntry));
         
-        DBGPRINT(("==> PrefixLookupAddr4: prefix context for ip %d.%d.%d.%d is created.\n", 
+        DBGPRINT(("==> PrefixLookupAddr4: prefix context for ip %d.%d.%d.%d created.\n", 
                   Context->Mib.Address.u.byte[0], Context->Mib.Address.u.byte[1], 
                   Context->Mib.Address.u.byte[2], Context->Mib.Address.u.byte[3]));
     }
@@ -330,12 +331,20 @@ Return Value:
         {
             // Prefix information option
             PPREFIX_INFO_OPTION prefixinfo = (PPREFIX_INFO_OPTION)(ptr);
-             
+            INT masklen = prefixinfo->flag_masklen & PREFIX_INFO_MASKLEN;
+            if (masklen >= 32)
+            {
+                // Response packet contains invalid mask length
+                PrefixContext = NULL;
+                break;
+            }
+            
             // Update prefix context
+            PrefixContext->Mib.Mask = 0xffffffff << (32 - masklen);
             NdisMoveMemory(&(PrefixContext->Mib.Prefix), &(prefixinfo->prefix), sizeof(IN6_ADDR));
             PrefixContext->Mib.PrefixLength = prefixinfo->prefixlen;
             PrefixContext->EntryTimeOut.QuadPart = ntohl(prefixinfo->ttl) * 10000000;
-            if ((prefixinfo->flag & PREFIX_INFO_MBIT) == 0)
+            if ((prefixinfo->flag_masklen & PREFIX_INFO_MBIT) == 0)
             {
                 // This prefix is for 1:1 mapping
                 PrefixContext->Mib.XlateMode = 0;

@@ -313,6 +313,11 @@ MPFreeAllPacketPools(
     IN PADAPT                    pAdapt
     );
 
+VOID
+MPFreeAllBufferPools(
+    IN PADAPT                    pAdapt
+    );
+
 NDIS_STATUS 
 MPPromoteSecondary ( 
     IN PADAPT                    pAdapt 

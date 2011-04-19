@@ -302,6 +302,16 @@ Return Value:
                 NdisFreePacketPool(pAdapt->RecvPacketPoolHandle);
             }
             
+            if (pAdapt->SendBufferPoolHandle != NULL)
+            {
+                NdisFreeBufferPool(pAdapt->SendBufferPoolHandle);
+            }
+            
+            if (pAdapt->RecvBufferPoolHandle != NULL)
+            {
+                NdisFreeBufferPool(pAdapt->RecvBufferPoolHandle);
+            }
+            
             if (LockAllocated == TRUE)
             {
                 NdisFreeSpinLock(&pAdapt->Lock);
@@ -523,7 +533,8 @@ Return Value:
         //
         //    Free the memory here, if was not released earlier(by calling the HaltHandler)
         //
-        MPFreeAllPacketPools (pAdapt);
+        MPFreeAllPacketPools(pAdapt);
+        MPFreeAllBufferPools(pAdapt);
         NdisFreeSpinLock(&pAdapt->Lock);
         NdisFreeMemory(pAdapt, 0, 0);
     }

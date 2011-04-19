@@ -1069,3 +1069,47 @@ Return Value:
     }
 }
 
+
+VOID
+MPFreeAllBufferPools(
+    IN PADAPT                    pAdapt
+    )
+/*++
+
+Routine Description:
+
+    Free all buffer pools on the specified adapter.
+    
+Arguments:
+
+    pAdapt    - pointer to ADAPT structure
+
+Return Value:
+
+    None
+
+--*/
+{
+    if (pAdapt->RecvBufferPoolHandle != NULL)
+    {
+        //
+        // Free the Buffer pool that is used to indicate receives
+        //
+        NdisFreeBufferPool(pAdapt->RecvBufferPoolHandle);
+
+        pAdapt->RecvBufferPoolHandle = NULL;
+    }
+
+    if (pAdapt->SendBufferPoolHandle != NULL)
+    {
+
+        //
+        //  Free the Buffer pool that is used to send packets below
+        //
+        NdisFreeBufferPool(pAdapt->SendBufferPoolHandle);
+
+        pAdapt->SendBufferPoolHandle = NULL;
+
+    }
+}
+

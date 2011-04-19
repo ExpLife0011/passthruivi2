@@ -4,6 +4,7 @@
 typedef struct _IVI_PREFIX_MIB
 {
     IN_ADDR    Address;       // Target IPv4 address
+    ULONG      Mask;          // Network mask of target IPv4 address
     IN6_ADDR   Prefix;        // IPv6 prefix corresponding to the IPv4 address
     UCHAR      PrefixLength;  // Must be a multiple of 8
     UCHAR      XlateMode;     // 0 for 1:1 mapping, 1 for 1:N mapping
@@ -29,13 +30,14 @@ typedef struct _PREFIX_INFO_OPTION
 {
     UCHAR       type;
     UCHAR       length;
+    UCHAR       flag_masklen;
     UCHAR       prefixlen;
-    UCHAR       flag;
     ULONG       ttl;
     IN6_ADDR    prefix;
 } PREFIX_INFO_OPTION, *PPREFIX_INFO_OPTION;
 
-#define PREFIX_INFO_MBIT  0x80
+#define PREFIX_INFO_MBIT     0x80  // '1000 0000'
+#define PREFIX_INFO_MASKLEN  0x3F  // '0011 1111'
 
 typedef struct _PORT_RANGE_OPTION
 {
