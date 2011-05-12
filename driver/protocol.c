@@ -921,7 +921,7 @@ Return Value:
             // own resources here and do not need to pass this 
             // send complete info to upper protocol driver. Do 
             // not decrease pAdapt->OutstandingSends since it is 
-            // not increased in SendPrefixLookupRequest().
+            // not increased when we send our own packets.
             //
             NdisUnchainBufferAtFront(Packet, &MyBuffer);
             while (MyBuffer != NULL)

@@ -227,7 +227,12 @@ Return Value:
                             else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
                             {
                                 PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
+                                PIVI_PREFIX_MIB            Mib = NULL;
                                 PUCHAR                     HoldData = NULL;
+                                UINT                       HoldDataLength = 0;
+                                
+                                UINT                       PacketSendSize = 0;
+                                PSEND_RSVD                 SendRsvd;
                                 
                                 DBGPRINT(("==> PtReceive: Receive a ICMPv6 prefix lookup response packet.\n"));
                                 
@@ -235,16 +240,143 @@ Return Value:
                                 NdisAcquireSpinLock(&PrefixListLock);
                                 
                                 PrefixContext = ParsePrefixLookupResponse(icmp6h, ntohs(ip6h->payload));
+                                if (PrefixContext == NULL)
+                                {
+                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    DBGPRINT(("==> PtReceive: Parse prefix lookup response failed.\n"));
+                                    Status = NDIS_STATUS_FAILURE;
+                                    NdisFreeMemory(PacketData, 0, 0);
+                                    NdisDprFreePacket(MyPacket);
+                                    break;
+                                }
                                 
                                 // Remove hold packet data from list and release spin lock.
                                 HoldData = PrefixContext->HoldPacketData;
+                                HoldDataLength = PrefixContext->HoldDataLength;
                                 PrefixContext->HoldPacketData = NULL;
-                                NdisReleaseSpinLock(&PrefixListLock);
                                 
+                                // Send the holding data, if any.
                                 if (HoldData != NULL)
                                 {
-                                    // XXX: we should send it out here!
+                                    //
+                                    // Copy the prefix mib entry to a new allocated memory.
+                                    // The memory of original prefix mib stored in the list may be
+                                    // freed by another thread after we release the spin lock.
+                                    //
+                                    Status = NdisAllocateMemoryWithTag((PVOID)&Mib, sizeof(IVI_PREFIX_MIB), TAG);
+                                    if (Status != NDIS_STATUS_SUCCESS)
+                                    {
+                                        NdisReleaseSpinLock(&PrefixListLock);
+                                        
+                                        DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed for Mib. Drop packet.\n"));
+                                        
+                                        // Give up the holding packet.
+                                        NdisFreeMemory(HoldData, 0, 0);
+                                        
+                                        Status = NDIS_STATUS_FAILURE;
+                                        NdisFreeMemory(PacketData, 0, 0);
+                                        NdisDprFreePacket(MyPacket);
+                                        break;
+                                    }
+                                    NdisMoveMemory(Mib, &(PrefixContext->Mib), sizeof(IVI_PREFIX_MIB));
+                                    
+                                    // Release spin lock now.
+                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    
+                                    // Allocate new memory.
+                                    Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
+                                    if (Status != NDIS_STATUS_SUCCESS)
+                                    {
+                                        DBGPRINT(("==> PtReceive: NdisAllocateMemoryWithTag failed for PacketDataNew. Drop packet.\n"));
+                                        
+                                        // Free prefix mib memory.
+                                        NdisFreeMemory(Mib, 0, 0);
+                                        
+                                        // Give up the holding packet.
+                                        NdisFreeMemory(HoldData, 0, 0);
+                                        
+                                        Status = NDIS_STATUS_FAILURE;
+                                        NdisFreeMemory(PacketData, 0, 0);
+                                        NdisDprFreePacket(MyPacket);
+                                        break;
+                                    }
+                                    NdisZeroMemory(PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD);
+                                    
+                                    PacketSendSize = PacketData4to6(HoldData, PacketDataNew, Mib);
+                                    if (PacketSendSize == 0)
+                                    {
+                                        DBGPRINT(("==> PtReceive: Translate failed with PacketData4to6. Drop packet.\n"));
+                                        
+                                        // Free prefix mib memory.
+                                        NdisFreeMemory(Mib, 0, 0);
+                                        
+                                        // Give up the holding packet.
+                                        NdisFreeMemory(HoldData, 0, 0);
+                                        
+                                        Status = NDIS_STATUS_FAILURE;
+                                        NdisFreeMemory(PacketData, 0, 0);
+                                        NdisFreeMemory(PacketDataNew, 0, 0);
+                                        NdisDprFreePacket(MyPacket);
+                                        break;
+                                    }
+                                    
+                                    // Free prefix mib memory.
+                                    NdisFreeMemory(Mib, 0, 0);
+                                    
+                                    // Free holding packet memory.
                                     NdisFreeMemory(HoldData, 0, 0);
+                                    
+                                    // Free response packet memory.
+                                    NdisFreeMemory(PacketData, 0, 0);
+                                    
+                                    // Allocate buffer.
+                                    NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->SendBufferPoolHandle, PacketDataNew, PacketSendSize);
+                                    if (Status != NDIS_STATUS_SUCCESS)
+                                    {
+                                        DBGPRINT(("==> PtReceive: NdisAllocateBuffer failed for PacketDataNew.\n"));
+                                        Status = NDIS_STATUS_FAILURE;
+                                        NdisFreeMemory(PacketDataNew, 0, 0);
+                                        NdisDprFreePacket(MyPacket);
+                                        break;
+                                    }
+                                    
+                                    // Send request packet using 'MyPacket'
+                                    SendRsvd = (PSEND_RSVD)(MyPacket->ProtocolReserved);
+                                    SendRsvd->OriginalPkt = NULL;   // Indicate that this is the packet we built by ourselves
+                                    
+                                    // Simply use the packet allocated from recv packet pool.
+                                    NdisChainBufferAtFront(MyPacket, MyBuffer);
+                                    MyPacket->Private.Head->Next = NULL;
+                                    MyPacket->Private.Tail = NULL;
+                                    
+                                    NdisSend(&Status, 
+                                             pAdapt->BindingHandle, 
+                                             MyPacket);
+                                    
+                                    if (Status != NDIS_STATUS_PENDING)
+                                    {
+                                        NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
+                                        while (MyBuffer != NULL)
+                                        {
+                                            NdisQueryBufferSafe(MyBuffer, &TempPointer, &BufferLength, NormalPagePriority);
+                                            if (TempPointer != NULL)
+                                            {
+                                                NdisFreeMemory(TempPointer, BufferLength, 0);
+                                            }
+                                            TempBuffer = MyBuffer;
+                                            NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                                            NdisFreeBuffer(TempBuffer);
+                                        }
+                                        NdisDprFreePacket(MyPacket);
+                                        DBGPRINT(("==> PtReceive: Send holding packet finish without pending and all resources freed.\n"));
+                                    }
+                                }
+                                else
+                                {
+                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    NdisFreeMemory(PacketData, 0, 0);
+                                    NdisDprFreePacket(MyPacket);
+                                    DBGPRINT(("==> PtReceive: No holding packet to be sent after prefix is resolved.\n"));
                                 }
                                 
                                 //
@@ -254,8 +386,6 @@ Return Value:
                                 // is success.
                                 //
                                 Status = NDIS_STATUS_SUCCESS;
-                                NdisFreeMemory(PacketData, 0, 0);
-                                NdisDprFreePacket(MyPacket);
                                 break;
                             }
                             else
@@ -486,7 +616,7 @@ Return Value:
                 while (MyBuffer != NULL)
                 {
                     NdisQueryBufferSafe(MyBuffer, &PacketData, &BufferLength, NormalPagePriority);
-                    if( PacketData != NULL )
+                    if (PacketData != NULL)
                     {
                         NdisFreeMemory(PacketData, BufferLength, 0);
                     }
@@ -782,7 +912,12 @@ Return Value:
                     else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
                     {
                         PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
+                        PIVI_PREFIX_MIB            Mib = NULL;
                         PUCHAR                     HoldData = NULL;
+                        UINT                       HoldDataLength = 0;
+                                
+                        UINT                       PacketSendSize = 0;
+                        PSEND_RSVD                 SendRsvd;
                         
                         DBGPRINT(("==> PtReceivePacket: Receive a ICMPv6 prefix lookup response packet.\n"));
                         
@@ -790,16 +925,138 @@ Return Value:
                         NdisAcquireSpinLock(&PrefixListLock);
                         
                         PrefixContext = ParsePrefixLookupResponse(icmp6h, ntohs(ip6h->payload));
+                        if (PrefixContext == NULL)
+                        {
+                            NdisReleaseSpinLock(&PrefixListLock);
+                            DBGPRINT(("==> PtReceivePacket: Parse prefix lookup response failed.\n"));
+                            NdisFreeMemory(PacketData, 0, 0);
+                            NdisDprFreePacket(MyPacket);
+                            return 0;
+                        }
                         
                         // Remove hold packet data from list and release spin lock.
                         HoldData = PrefixContext->HoldPacketData;
+                        HoldDataLength = PrefixContext->HoldDataLength;
                         PrefixContext->HoldPacketData = NULL;
-                        NdisReleaseSpinLock(&PrefixListLock);
                         
+                        // Send the holding data, if any.
                         if (HoldData != NULL)
                         {
-                            // XXX: we should send it out here!
+                            //
+                            // Copy the prefix mib entry to a new allocated memory.
+                            // The memory of original prefix mib stored in the list may be
+                            // freed by another thread after we release the spin lock.
+                            //
+                            Status = NdisAllocateMemoryWithTag((PVOID)&Mib, sizeof(IVI_PREFIX_MIB), TAG);
+                            if (Status != NDIS_STATUS_SUCCESS)
+                            {
+                                NdisReleaseSpinLock(&PrefixListLock);
+                                
+                                DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed for Mib. Drop packet.\n"));
+                                
+                                // Give up the holding packet.
+                                NdisFreeMemory(HoldData, 0, 0);
+                                
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                return 0;
+                            }
+                            NdisMoveMemory(Mib, &(PrefixContext->Mib), sizeof(IVI_PREFIX_MIB));
+                            
+                            // Release spin lock now.
+                            NdisReleaseSpinLock(&PrefixListLock);
+                            
+                            // Allocate new memory.
+                            Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
+                            if (Status != NDIS_STATUS_SUCCESS)
+                            {
+                                DBGPRINT(("==> PtReceivePacket: NdisAllocateMemoryWithTag failed for PacketDataNew. Drop packet.\n"));
+                                
+                                // Free prefix mib memory.
+                                NdisFreeMemory(Mib, 0, 0);
+                                
+                                // Give up the holding packet.
+                                NdisFreeMemory(HoldData, 0, 0);
+                                
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                return 0;
+                            }
+                            NdisZeroMemory(PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD);
+                            
+                            PacketSendSize = PacketData4to6(HoldData, PacketDataNew, Mib);
+                            if (PacketSendSize == 0)
+                            {
+                                DBGPRINT(("==> PtReceivePacket: Translate failed with PacketData4to6. Drop packet.\n"));
+                                
+                                // Free prefix mib memory.
+                                NdisFreeMemory(Mib, 0, 0);
+                                
+                                // Give up the holding packet.
+                                NdisFreeMemory(HoldData, 0, 0);
+                                
+                                NdisFreeMemory(PacketData, 0, 0);
+                                NdisFreeMemory(PacketDataNew, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                return 0;
+                            }
+                            
+                            // Free prefix mib memory.
+                            NdisFreeMemory(Mib, 0, 0);
+                            
+                            // Free holding packet memory.
                             NdisFreeMemory(HoldData, 0, 0);
+                            
+                            // Free response packet memory.
+                            NdisFreeMemory(PacketData, 0, 0);
+                            
+                            // Allocate buffer.
+                            NdisAllocateBuffer(&Status, &MyBuffer, pAdapt->SendBufferPoolHandle, PacketDataNew, PacketSendSize);
+                            if (Status != NDIS_STATUS_SUCCESS)
+                            {
+                                DBGPRINT(("==> PtReceivePacket: NdisAllocateBuffer failed for PacketDataNew.\n"));
+                                NdisFreeMemory(PacketDataNew, 0, 0);
+                                NdisDprFreePacket(MyPacket);
+                                return 0;
+                            }
+                            
+                            // Send request packet using 'MyPacket'
+                            SendRsvd = (PSEND_RSVD)(MyPacket->ProtocolReserved);
+                            SendRsvd->OriginalPkt = NULL;   // Indicate that this is the packet we built by ourselves
+                            
+                            // Simply use the packet allocated from recv packet pool.
+                            NdisChainBufferAtFront(MyPacket, MyBuffer);
+                            MyPacket->Private.Head->Next = NULL;
+                            MyPacket->Private.Tail = NULL;
+                            
+                            NdisSend(&Status, 
+                                     pAdapt->BindingHandle, 
+                                     MyPacket);
+                            
+                            if (Status != NDIS_STATUS_PENDING)
+                            {
+                                NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
+                                while (MyBuffer != NULL)
+                                {
+                                    NdisQueryBufferSafe(MyBuffer, &TempPointer, &BufferLength, NormalPagePriority);
+                                    if (TempPointer != NULL)
+                                    {
+                                        NdisFreeMemory(TempPointer, BufferLength, 0);
+                                    }
+                                    TempBuffer = MyBuffer;
+                                    NdisGetNextBuffer(TempBuffer, &MyBuffer);
+                                    NdisFreeBuffer(TempBuffer);
+                                }
+                                NdisDprFreePacket(MyPacket);
+                                DBGPRINT(("==> PtReceivePacket: Send holding packet finish without pending and all resources freed.\n"));
+                            }
+                        }
+                        else
+                        {
+                            NdisReleaseSpinLock(&PrefixListLock);
+                            NdisFreeMemory(PacketData, 0, 0);
+                            NdisDprFreePacket(MyPacket);
+                            DBGPRINT(("==> PtReceivePacket: No holding packet to be sent after prefix is resolved.\n"));
                         }
                         
                         //
@@ -808,8 +1065,6 @@ Return Value:
                         // our IM driver. Simply return and tell miniport receive 
                         // is success.
                         //
-                        NdisFreeMemory(PacketData, 0, 0);
-                        NdisDprFreePacket(MyPacket);
                         return 0;
                     }
                     else
@@ -1012,7 +1267,7 @@ Return Value:
         //
         if (Status == NDIS_STATUS_RESOURCES)
         {
-            NdisUnchainBufferAtFront( MyPacket, &MyBuffer );
+            NdisUnchainBufferAtFront(MyPacket, &MyBuffer);
             while (MyBuffer != NULL)
             {
                 NdisQueryBufferSafe(MyBuffer, &PacketData, &BufferLength, NormalPagePriority);

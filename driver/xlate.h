@@ -98,4 +98,11 @@ Udp6to4(
     );
 
 
+UINT
+PacketData4to6(
+    IN  PUCHAR            Ipv4PacketData, 
+    OUT PUCHAR            Ipv6PacketData,
+    IN  PIVI_PREFIX_MIB   PrefixMib
+    );
+
 #endif // _XLATE_H_

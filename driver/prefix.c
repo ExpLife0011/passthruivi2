@@ -88,6 +88,11 @@ Routine Description:
         p = p->Flink;
         // Remove entry and memory
         RemoveEntryList(temp);
+        if (PrefixContext->HoldPacketData != NULL)
+        {
+            // Free any pending packet
+            NdisFreeMemory(PrefixContext->HoldPacketData, 0, 0);
+        }
         NdisFreeMemory(PrefixContext, 0, 0);
         //DBGPRINT(("==> ResetPrefixLists: prefix context memory freed.\n"));
         // Go to next entry
@@ -157,6 +162,7 @@ Return Value:
         
         // Initialize
         Context->HoldPacketData = NULL;
+        Context->HoldDataLength = 0;
         Context->TryCount = 0;
         Context->Resolved = FALSE;
         Context->Mib.Address.u.dword = Addr->u.dword;

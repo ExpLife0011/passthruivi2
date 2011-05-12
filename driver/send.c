@@ -41,7 +41,6 @@ Return Value:
     BOOLEAN             ret;
     UINT                PacketSendSize = 0; // Length of bytes need to be sent in the buffer
     
-    //DBGPRINT(("==> MPSendPackets entered.\n"));
     
     for (i = 0; i < NumberOfPackets; i++)
     {
@@ -303,6 +302,7 @@ Return Value:
                                 NdisFreeMemory(PrefixContext->HoldPacketData, 0, 0);
                             }
                             PrefixContext->HoldPacketData = PacketData;
+                            PrefixContext->HoldDataLength = PacketLength;
                             
                             NdisReleaseSpinLock(&PrefixListLock);
                             //
@@ -350,10 +350,10 @@ Return Value:
                                 // ICMPv4 packet
                                 PICMP_HEADER icmph = (ICMP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
                                 
-                                DBGPRINT(("==> MPSendPackets: Send an ICMPv4 packet.\n"));
-                                
                                 if (icmph->type == ICMP_ECHO) // Echo Request
                                 {
+                                    DBGPRINT(("==> MPSendPackets: Send an ICMPv4 echo request packet.\n"));
+                                    
                                     Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
                                     if (Status != NDIS_STATUS_SUCCESS)
                                     {
@@ -394,11 +394,11 @@ Return Value:
                                     TempPointer = PacketData;
                                     PacketData = PacketDataNew;
                                     PacketDataNew = TempPointer;
-                                    NdisFreeMemory( PacketDataNew, 0, 0 );
+                                    NdisFreeMemory(PacketDataNew, 0, 0);
                                 }
                                 else
                                 {
-                                    DBGPRINT(("==> MPSendPackets: Unsupported icmp type. Drop packet.\n"));
+                                    DBGPRINT(("==> MPSendPackets: Unsupported ICMPv4 type. Drop packet.\n"));
                                     
                                     // Free prefix mib memory.
                                     NdisFreeMemory(Mib, 0, 0);
@@ -413,8 +413,6 @@ Return Value:
                             else if (ih->protocol == IP_TCP)
                             {
                                 // TCPv4 packet
-                                PTCP_HEADER th = (TCP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
-                                
                                 DBGPRINT(("==> MPSendPackets: Send a TCPv4 packet.\n"));
                                 
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
@@ -462,8 +460,6 @@ Return Value:
                             else if (ih->protocol == IP_UDP)
                             {
                                 // UDPv4 packet
-                                PUDP_HEADER uh = (UDP_HEADER *)(PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
-                                
                                 DBGPRINT(("==> MPSendPackets: Send a UDPv4 packet.\n"));
                                 
                                 Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength + IVI_PACKET_OVERHEAD, TAG);
@@ -721,7 +717,7 @@ Return Value:
                         else if (ip6h->nexthdr == IP_ICMP6)
                         {
                             // icmpv6 packet
-                            PICMP6_HEADER icmp6h = (ICMP6_HEADER *)( PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER) );
+                            PICMP6_HEADER icmp6h = (ICMP6_HEADER *)(PacketData + sizeof(ETH_HEADER) + sizeof(IP6_HEADER));
                             
                             DBGPRINT(("==> MPSendPackets: Send an ICMPv6 packet.\n")); 
                             
@@ -831,7 +827,6 @@ Return Value:
                         TempBuffer = MyBuffer;
                         NdisGetNextBuffer(TempBuffer, &MyBuffer);
                         NdisFreeBuffer(TempBuffer);
-                        //DBGPRINT(("==> MPSendPackets: PacketData and MyBuffer freed.\n"));
                     }
                     NdisFreePacket(MyPacket);
                     ADAPT_DECR_PENDING_SENDS(pAdapt);
@@ -853,7 +848,5 @@ Return Value:
                               Packet,
                               Status);
         }
-        
-        //DBGPRINT(("<== MPSendPackets: leaving.\n"));
     }
 }

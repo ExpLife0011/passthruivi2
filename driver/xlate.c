@@ -613,3 +613,81 @@ Return Value:
     return (sizeof(ETH_HEADER) + ntohs(ip6h->payload) + 20);
 }
 
+
+UINT
+PacketData4to6(
+    IN  PUCHAR            Ipv4PacketData, 
+    OUT PUCHAR            Ipv6PacketData,
+    IN  PIVI_PREFIX_MIB   PrefixMib
+    )
+/*++
+
+Routine Description:
+
+    Translate IPv4 packet into IPv6 packet.
+    
+Arguments:
+
+    Ipv4PacketData - Pointer to the IPv4 packet data memory that needs to be translated
+    Ipv6PacketData - Pointer to the caller-supplied IPv6 packet data memory that holds the translated packet
+    PrefixMib - Pointer to IVI prefix mib for the destination address in IPv4 packet
+
+Return Value:
+
+    Length of the translated packet on success; return 0 if failed.
+
+--*/
+{
+    PETH_HEADER   eh = (PETH_HEADER)(Ipv4PacketData);
+    PIP_HEADER    ih = (PIP_HEADER)(Ipv4PacketData + sizeof(ETH_HEADER));
+    UINT          PacketSendSize = 0;
+    
+    if (ih->protocol == IP_ICMP)
+    {
+        // ICMPv4 packet
+        PICMP_HEADER icmph = (PICMP_HEADER)(Ipv4PacketData + sizeof(ETH_HEADER) + (ih->ver_ihl & 0x0f) * 4);
+        
+        if (icmph->type == ICMP_ECHO) // Echo Request
+        {
+            DBGPRINT(("==> PacketData4to6: Translate an ICMPv4 echo request packet.\n"));
+            
+            PacketSendSize = Icmp4to6(Ipv4PacketData, Ipv6PacketData, PrefixMib);
+            if (PacketSendSize == 0)
+            {
+                DBGPRINT(("==> PacketData4to6: Translate failed with Icmp4to6.\n"));
+            }
+        }
+        else
+        {
+            DBGPRINT(("==> PacketData4to6: Unsupported ICMPv4 type.\n"));
+        }
+    }
+    else if (ih->protocol == IP_TCP)
+    {
+        // TCPv4 packet
+        DBGPRINT(("==> PacketData4to6: Translate a TCPv4 packet.\n"));
+        
+        PacketSendSize = Tcp4to6(Ipv4PacketData, Ipv6PacketData, PrefixMib);
+        if (PacketSendSize == 0)
+        {
+            DBGPRINT(("==> PacketData4to6: Translate failed with Tcp4to6.\n"));
+        }
+    }
+    else if (ih->protocol == IP_UDP)
+    {
+        // UDPv4 packet
+        DBGPRINT(("==> PacketData4to6: Translate a UDPv4 packet.\n"));
+        
+        PacketSendSize = Udp4to6(Ipv4PacketData, Ipv6PacketData, PrefixMib);
+        if (PacketSendSize == 0)
+        {
+            DBGPRINT(("==> PacketData4to6: Translate failed with Udp4to6.\n"));
+        }
+    }
+    else
+    {
+        DBGPRINT(("==> PacketData4to6: Unsupported IPv4 protocol type.\n"));
+    }
+    
+    return PacketSendSize;
+}

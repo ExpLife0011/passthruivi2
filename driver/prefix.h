@@ -20,6 +20,7 @@ typedef struct _PREFIX_LOOKUP_CONTEXT
     LARGE_INTEGER   StateSetTime;      // The time when this entry enters the current state
     IVI_PREFIX_MIB  Mib;
     PUCHAR          HoldPacketData;    // Hold only most recent packet data; set to NULL after the prefix is resolved
+    UINT            HoldDataLength;    // Length of the hold packet; meaningless if HoldPacketData pointer is NULL
     BOOLEAN         Resolved;          // Set to TRUE after the prefix is resolved for this entry
     UCHAR           TryCount;          // Counts the request send times on this entry
 } PREFIX_LOOKUP_CONTEXT, *PPREFIX_LOOKUP_CONTEXT;
