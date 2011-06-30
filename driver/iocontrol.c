@@ -44,7 +44,8 @@ Return Value:
     PUCHAR              ioBuffer = NULL;
     ULONG               inputBufferLength;
     ULONG               outputBufferLength;
-    USHORT              temp;
+    USHORT              temp1, temp2;
+    UCHAR               temp3;
     
     UNREFERENCED_PARAMETER(pDeviceObject);
     
@@ -60,102 +61,93 @@ Return Value:
     
     switch (FunctionCode)
     {
-        case IOCTL_PTUSERIO_SET_MOD:
-            if (inputBufferLength != sizeof(mod))
+        case IOCTL_PTUSERIO_SET_RATIO:
+            if (inputBufferLength != sizeof(LocalPrefixInfo.Ratio))
             {
-                DBGPRINT(("==> ioctl: SET_MOD input type invalid.\n"));
+                DBGPRINT(("==> ioctl: SET_RATIO input type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(&temp, (PVOID)ioBuffer, inputBufferLength);
-                if (temp > 4096)
+                NdisMoveMemory(&temp1, (PVOID)ioBuffer, inputBufferLength);
+                if (temp1 > 4096)
                 {
-                    DBGPRINT(("==> ioctl: mod input %d is too large.\n", temp));
+                    DBGPRINT(("==> ioctl: SET_RATIO input %d is too large.\n", LocalPrefixInfo.Ratio));
                     NtStatus = STATUS_UNSUCCESSFUL;
                 }
-                /*
-                 * User-mode app is responsible for parameter's meaning
-                 *
-                else if (temp <= res)
-                {
-                    DBGPRINT(("==> ioctl: mod input %d is smaller than res.\n", temp));
-                    NtStatus = STATUS_UNSUCCESSFUL;
-                }
-                 *
-                 */
                 else
                 {
-                    mod = temp;
-                    mod_ratio = 0;
-                    while (temp >> 1 != 0)
+                    LocalPrefixInfo.Ratio = temp1;
+                    temp2 = 0;
+                    while (temp1 >> 1 != 0)
                     {
-                        mod_ratio += 1;
-                        temp = temp >> 1;
+                        temp2 += 1;
+                        temp1 = temp1 >> 1;
                     }
-                    mod_ratio = mod_ratio << 4;
-                    DBGPRINT(("==> ioctl: set mod to %d\n", mod));
-                    DBGPRINT(("==> ioctl: set mod_ratio to %02x\n", mod_ratio));
+                    temp2 = temp2 << 12;
+                    LocalPrefixInfo.SuffixCode = temp2;
+                    
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.Ratio to %d\n", LocalPrefixInfo.Ratio));
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.SuffixCode to %02x\n", LocalPrefixInfo.SuffixCode));
                     ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
             }
             break;
             
-        case IOCTL_PTUSERIO_GET_MOD:
-            if (outputBufferLength != sizeof(mod))
+        case IOCTL_PTUSERIO_GET_RATIO:
+            if (outputBufferLength != sizeof(LocalPrefixInfo.Ratio))
             {
-                DBGPRINT(("==> ioctl: GET_MOD output type invalid.\n"));
+                DBGPRINT(("==> ioctl: GET_RATIO output type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(ioBuffer, &mod, outputBufferLength);
-                //*((PUSHORT)ioBuffer) = mod;
-                DBGPRINT(("==> ioctl: get mod by user.\n"));
-                BytesReturned = sizeof(mod);
+                NdisMoveMemory(ioBuffer, &(LocalPrefixInfo.Ratio), outputBufferLength);
+                DBGPRINT(("==> ioctl: get LocalPrefixInfo.Ratio by user.\n"));
+                BytesReturned = sizeof(LocalPrefixInfo.Ratio);
             }
             break;
             
-        case IOCTL_PTUSERIO_SET_RES:
-            if (inputBufferLength != sizeof(res))
+        case IOCTL_PTUSERIO_SET_OFFSET:
+            if (inputBufferLength != sizeof(LocalPrefixInfo.Offset))
             {
-                DBGPRINT(("==> ioctl: SET_RES input type invalid.\n"));
+                DBGPRINT(("==> ioctl: SET_OFFSET input type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(&temp, (PVOID)ioBuffer, inputBufferLength);
-                if (temp >= mod)
+                NdisMoveMemory(&temp1, (PVOID)ioBuffer, inputBufferLength);
+                if (temp1 >= LocalPrefixInfo.Ratio)
                 {
-                    DBGPRINT(("==> ioctl: res input %d is too large.\n", temp));
+                    DBGPRINT(("==> ioctl: SET_OFFSET input %d is larger than current Ratio %d.\n", temp1, LocalPrefixInfo.Ratio));
                     NtStatus = STATUS_UNSUCCESSFUL;
                 }
                 else
                 {
-                    res = temp;
-                    DBGPRINT(("==> ioctl: set res to %d\n", res));
+                    LocalPrefixInfo.Offset = temp1;
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.Offset to %d\n", LocalPrefixInfo.Offset));
                     ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
             }
             break;
             
-        case IOCTL_PTUSERIO_GET_RES:
-            if (outputBufferLength != sizeof(res))
+        case IOCTL_PTUSERIO_GET_OFFSET:
+            if (outputBufferLength != sizeof(LocalPrefixInfo.Offset))
             {
                 DBGPRINT(("==> ioctl: GET_RES output type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(ioBuffer, &res, outputBufferLength);
-                //*((PUSHORT)ioBuffer) = res;
-                DBGPRINT(("==> ioctl: get res by user.\n"));
-                BytesReturned = sizeof(res);
+                NdisMoveMemory(ioBuffer, &(LocalPrefixInfo.Offset), outputBufferLength);
+                DBGPRINT(("==> ioctl: get LocalPrefixInfo.Offset by user.\n"));
+                BytesReturned = sizeof(LocalPrefixInfo.Offset);
             }
             break;
-            
+        
+/*        
         case IOCTL_PTUSERIO_SET_TIMEOUT:
             if (inputBufferLength != sizeof(UdpTimeOut))
             {
@@ -183,20 +175,55 @@ Return Value:
                 BytesReturned = sizeof(UdpTimeOut);
             }
             break;
-        
-        case IOCTL_PTUSERIO_SET_PREFIX:
-            if (inputBufferLength != 16)
+*/
+            
+        case IOCTL_PTUSERIO_SET_GATEWAYMAC:
+            if (inputBufferLength != 6)
             {
-                DBGPRINT(("==> ioctl: SET_PREFIX input buffer size less than 16.\n"));
+                DBGPRINT(("==> ioctl: SET_GATEWAYMAC input buffer size is not 6.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(prefix, (PVOID)ioBuffer, inputBufferLength);
-                DBGPRINT(("==> ioctl: set prefix[] to %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", 
-                            prefix[0], prefix[1], prefix[2], prefix[3], prefix[4], prefix[5], 
-                            prefix[6], prefix[7], prefix[8], prefix[9], prefix[10], prefix[11], 
-                            prefix[12], prefix[13], prefix[14], prefix[15]));
+                NdisMoveMemory(GatewayMAC, ioBuffer, inputBufferLength);
+                DBGPRINT(("==> ioctl: set GatewayMAC[6] to %02x:%02x:%02x:%02x:%02x:%02x\n", 
+                            GatewayMAC[0], GatewayMAC[1], GatewayMAC[2], 
+                            GatewayMAC[3], GatewayMAC[4], GatewayMAC[5]));
+                ResetMapListsSafe();
+                DBGPRINT(("==> Old Map List Freed.\n"));
+            }
+            break;
+            
+        case IOCTL_PTUSERIO_GET_GATEWAYMAC:
+            if (outputBufferLength != 6)
+            {
+                DBGPRINT(("==> ioctl: GET_GATEWAYMAC output buffer size is not 6.\n"));
+                NtStatus = STATUS_UNSUCCESSFUL;
+            }
+            else
+            {
+                NdisMoveMemory(ioBuffer, GatewayMAC, outputBufferLength);
+                DBGPRINT(("==> ioctl: get GatewayMAC by user.\n"));
+                BytesReturned = 6;
+            }
+            break;
+        
+        case IOCTL_PTUSERIO_SET_PREFIX:
+            if (inputBufferLength != 16)
+            {
+                DBGPRINT(("==> ioctl: SET_PREFIX input buffer size is not 16.\n"));
+                NtStatus = STATUS_UNSUCCESSFUL;
+            }
+            else
+            {
+                NdisMoveMemory(LocalPrefixInfo.Prefix.u.byte, ioBuffer, inputBufferLength);
+                DBGPRINT(("==> ioctl: set LocalPrefixInfo.Prefix.u.byte[16] to %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", 
+                            LocalPrefixInfo.Prefix.u.byte[0], LocalPrefixInfo.Prefix.u.byte[1], LocalPrefixInfo.Prefix.u.byte[2], 
+                            LocalPrefixInfo.Prefix.u.byte[3], LocalPrefixInfo.Prefix.u.byte[4], LocalPrefixInfo.Prefix.u.byte[5], 
+                            LocalPrefixInfo.Prefix.u.byte[6], LocalPrefixInfo.Prefix.u.byte[7], LocalPrefixInfo.Prefix.u.byte[8], 
+                            LocalPrefixInfo.Prefix.u.byte[9], LocalPrefixInfo.Prefix.u.byte[10], LocalPrefixInfo.Prefix.u.byte[11], 
+                            LocalPrefixInfo.Prefix.u.byte[12], LocalPrefixInfo.Prefix.u.byte[13], LocalPrefixInfo.Prefix.u.byte[14], 
+                            LocalPrefixInfo.Prefix.u.byte[15]));
                 ResetMapListsSafe();
                 DBGPRINT(("==> Old Map List Freed.\n"));
             }
@@ -205,35 +232,35 @@ Return Value:
         case IOCTL_PTUSERIO_GET_PREFIX:
             if (outputBufferLength != 16)
             {
-                DBGPRINT(("==> ioctl: GET_PREFIX output buffer size less than 16.\n"));
+                DBGPRINT(("==> ioctl: GET_PREFIX output buffer size is not 16.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(ioBuffer, prefix, outputBufferLength);
-                DBGPRINT(("==> ioctl: get prefix by user.\n"));
+                NdisMoveMemory(ioBuffer, LocalPrefixInfo.Prefix.u.byte, outputBufferLength);
+                DBGPRINT(("==> ioctl: get LocalPrefixInfo.Prefix by user.\n"));
                 BytesReturned = 16;
             }
             break;
             
         case IOCTL_PTUSERIO_SET_PREFIXLENGTH:
-            if (inputBufferLength != sizeof(prefix_length))
+            if (inputBufferLength != sizeof(LocalPrefixInfo.PrefixLength))
             {
-                DBGPRINT(("==> ioctl: SET_PREFIX input type invalid.\n"));
+                DBGPRINT(("==> ioctl: SET_PREFIXLENGTH input type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(&temp, (PVOID)ioBuffer, inputBufferLength);
-                if (temp > 128)
+                NdisMoveMemory(&temp3, ioBuffer, inputBufferLength);
+                if (temp3 > 128)
                 {
-                    DBGPRINT(("==> ioctl: prefix_length input %d is too large.\n", temp));
+                    DBGPRINT(("==> ioctl: SET_PREFIXLENGTH input %d too large.\n", temp3));
                     NtStatus = STATUS_UNSUCCESSFUL;
                 }
                 else
                 {
-                    prefix_length = temp;
-                    DBGPRINT(("==> ioctl: set prefix_length to %d\n", prefix_length));
+                    LocalPrefixInfo.PrefixLength = temp3;
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.PrefixLength to %d\n", LocalPrefixInfo.PrefixLength));
                     ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
@@ -241,16 +268,16 @@ Return Value:
             break;
             
         case IOCTL_PTUSERIO_GET_PREFIXLENGTH:
-            if (outputBufferLength != sizeof(prefix_length))
+            if (outputBufferLength != sizeof(LocalPrefixInfo.PrefixLength))
             {
                 DBGPRINT(("==> ioctl: GET_PREFIXLENGTH output type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
             {
-                NdisMoveMemory(ioBuffer, &prefix_length, outputBufferLength);
-                DBGPRINT(("==> ioctl: get prefix_length by user.\n"));
-                BytesReturned = sizeof(prefix_length);
+                NdisMoveMemory(ioBuffer, &(LocalPrefixInfo.PrefixLength), outputBufferLength);
+                DBGPRINT(("==> ioctl: get LocalPrefixInfo.PrefixLength by user.\n"));
+                BytesReturned = sizeof(LocalPrefixInfo.PrefixLength);
             }
             break;
                 

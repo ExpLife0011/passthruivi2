@@ -293,7 +293,7 @@ Return Value:
 {
     USHORT    ret = 0;
     SHORT     remaining;
-    LONG      MaxPorts = 65536 / mod;
+    LONG      MaxPorts = 65536 / LocalPrefixInfo.Ratio;
     
     USHORT    rover;
     USHORT    low;
@@ -330,13 +330,13 @@ Return Value:
         
         if (xlate_mode)   // 1:N id mapping
         {
-            low = (USHORT)(1024 / mod) + 1;
+            low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
             high = MaxPorts - 1;
             remaining = (high - low) + 1;
     
             if (PortListLength != 0)
             {
-                rover = (USHORT)(LastAllocatedUdpPort / mod) + 1;
+                rover = (USHORT)(LastAllocatedUdpPort / LocalPrefixInfo.Ratio) + 1;
             }
             else
             {
@@ -345,7 +345,7 @@ Return Value:
             
             do
             {
-                ret = rover * mod + res;
+                ret = rover * LocalPrefixInfo.Ratio + LocalPrefixInfo.Offset;
                 if (UdpPortMapInTable[ret].Map == NULL)
                 {
                     // find idle ivi-id

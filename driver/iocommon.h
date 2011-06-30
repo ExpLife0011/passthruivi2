@@ -1,16 +1,3 @@
-/* Filename  : iocommon.h
- * 
- * Author    : Shang Wentao
- * Email     : wentaoshang@gmail.com
- * 
- * This file contains the ioctl function codes, 
- * and should be updated with the 'iocommon.h' 
- * in the '/user' directory at the same time. 
- * It is not part of the original Passthru NDIS
- * driver. 
- *
- */
-
 #ifndef _IOCOMMON_H
 #define _IOCOMMON_H
 
@@ -19,23 +6,32 @@
 #define _PTUSERIO_CTL_CODE(_Function, _Method, _Access)  \
             CTL_CODE(FSCTL_PTUSERIO_BASE, _Function, _Method, _Access)
 
-#define IOCTL_PTUSERIO_SET_MOD   \
+
+#define IOCTL_PTUSERIO_SET_RATIO   \
             _PTUSERIO_CTL_CODE(0x201, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
     
-#define IOCTL_PTUSERIO_GET_MOD   \
+#define IOCTL_PTUSERIO_GET_RATIO   \
             _PTUSERIO_CTL_CODE(0x202, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
     
-#define IOCTL_PTUSERIO_SET_RES   \
+#define IOCTL_PTUSERIO_SET_OFFSET   \
             _PTUSERIO_CTL_CODE(0x203, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
     
-#define IOCTL_PTUSERIO_GET_RES   \
+#define IOCTL_PTUSERIO_GET_OFFSET   \
             _PTUSERIO_CTL_CODE(0x204, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
+/*
 #define IOCTL_PTUSERIO_SET_TIMEOUT   \
             _PTUSERIO_CTL_CODE(0x205, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
     
 #define IOCTL_PTUSERIO_GET_TIMEOUT   \
             _PTUSERIO_CTL_CODE(0x206, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+*/
+
+#define IOCTL_PTUSERIO_SET_GATEWAYMAC   \
+            _PTUSERIO_CTL_CODE(0x207, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
+    
+#define IOCTL_PTUSERIO_GET_GATEWAYMAC   \
+            _PTUSERIO_CTL_CODE(0x208, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
 #define IOCTL_PTUSERIO_SET_PREFIX   \
             _PTUSERIO_CTL_CODE(0x209, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)

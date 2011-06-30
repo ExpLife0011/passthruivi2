@@ -32,10 +32,12 @@ Routine Description:
     LocalPrefixInfo.Prefix.u.byte[1] = 0x01;
     LocalPrefixInfo.Prefix.u.byte[2] = 0x0d;
     LocalPrefixInfo.Prefix.u.byte[3] = 0xa8;
-    LocalPrefixInfo.Prefix.u.byte[4] = 0xff;
-    LocalPrefixInfo.PrefixLength = 40;
+    LocalPrefixInfo.Prefix.u.byte[4] = 0xff;  // XXX: Prefix set to 2001:da8:ff00::/40
+    LocalPrefixInfo.PrefixLength = 40;        // XXX: Prefix length set to 40 bits
     LocalPrefixInfo.XlateMode = 0;  // XlateMode default to 0 (1:1 mapping); XXX: should be default to 1 (1:N mapping)
-    LocalPrefixInfo.SuffixCode = 0x8001;  // SuffixCode for Ratio = 2^8 (256) and Index = 1; XXX: should be set to 0 when XlateMode = 0
+    LocalPrefixInfo.SuffixCode = 0x4001;  // SuffixCode for Ratio = 2^8 (256) and Index = 1; XXX: should be set to 0 when XlateMode = 0
+    LocalPrefixInfo.Ratio = 16;
+    LocalPrefixInfo.Offset = 1;
     
     // XXX: prefix server address should be configurable
     NdisZeroMemory(&PrefixServerAddress, sizeof(IN6_ADDR));
@@ -386,7 +388,10 @@ Return Value:
                 temp = temp >> 1;
             }
             PrefixContext->Mib.SuffixCode = PrefixContext->Mib.SuffixCode << 12;
-            PrefixContext->Mib.SuffixCode += portrange->index & 0x0fff;
+            PrefixContext->Mib.SuffixCode += portrange->offset & 0x0fff;
+            
+            PrefixContext->Mib.Ratio = portrange->ratio;
+            PrefixContext->Mib.Offset = portrange->offset;
             
             // Set 'PrefixContext->Resolved' here and continue to look for prefix info option
             PrefixContext->Resolved = TRUE;

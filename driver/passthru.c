@@ -61,6 +61,7 @@ enum _DEVICE_STATE
 } ControlDeviceState = PS_DEVICE_STATE_READY;
 
 
+
 NTSTATUS
 DriverEntry(
     IN PDRIVER_OBJECT        DriverObject,
@@ -359,7 +360,6 @@ Return Value:
             // Add code here to handle ioctl commands sent to passthru.
             //
             status = DevIoControl(DeviceObject, Irp);
-            //DBGPRINT(("==> back to dispatch!\n"));
             break;
         
         default:
@@ -453,12 +453,17 @@ PtUnload(
     UNREFERENCED_PARAMETER(DriverObject);
     
     DBGPRINT(("PtUnload: entered\n"));
+    
     PtUnloadProtocol();
+    
     NdisIMDeregisterLayeredMiniport(DriverHandle);
+    
     NdisFreeSpinLock(&GlobalLock);
+    
     DBGPRINT(("PtUnload: done!\n"));
     
     ReleaseMapListsAndLocks();
+    
     DBGPRINT(("PtUnload: mapping lists cleared.\n"));
 }
 

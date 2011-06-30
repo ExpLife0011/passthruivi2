@@ -17,9 +17,6 @@ Environment:
 
 Revision History:
 
-	Revised for IVI port mapping by Wentao Shang
-    
-    Add complete checksum computing operations by Wentao Shang
 
 --*/
 
@@ -74,7 +71,7 @@ Return Value:
         // the Miniport handle in it.
         //
         pAdapt = NdisIMGetDeviceContext(MiniportAdapterHandle);
-        pAdapt->MiniportHandle = MiniportAdapterHandle;
+        pAdapt->MiniportIsHalted = FALSE;
 
         DBGPRINT(("==> Miniport Initialize: Adapt %p\n", pAdapt));
 
@@ -126,6 +123,7 @@ Return Value:
                                 NDIS_ATTRIBUTE_NO_HALT_ON_SUSPEND,
                              0);
 
+        pAdapt->MiniportHandle = MiniportAdapterHandle;
         //
         // Initialize LastIndicatedStatus to be NDIS_STATUS_MEDIA_CONNECT
         //
@@ -136,6 +134,7 @@ Return Value:
         // and our miniport edge to Powered On.
         //
         pAdapt->MPDeviceState = NdisDeviceStateD0;
+        pAdapt->PTDeviceState = NdisDeviceStateD0;
 
         //
         // Add this adapter to the global pAdapt List
@@ -164,6 +163,11 @@ Return Value:
     ASSERT(pAdapt->MiniportInitPending == TRUE);
     pAdapt->MiniportInitPending = FALSE;
     NdisSetEvent(&pAdapt->MiniportInitEvent);
+
+    if (Status == NDIS_STATUS_SUCCESS)
+    {
+        PtReferenceAdapt(pAdapt);
+    }
 
     DBGPRINT(("<== Miniport Initialize: Adapt %p, Status %x\n", pAdapt, Status));
 
@@ -398,6 +402,13 @@ Return Value:
         *pAdapt->BytesNeeded = 0;
 
 
+        //
+        // Setting our internal flags
+        // Default, device is ON
+        //
+        pAdapt->MPDeviceState = NdisDeviceStateD0;
+        pAdapt->PTDeviceState = NdisDeviceStateD0;
+
         *pStatus = NDIS_STATUS_SUCCESS;
     }
     else
@@ -410,12 +421,12 @@ Return Value:
 
 NDIS_STATUS
 MPSetInformation(
-    IN NDIS_HANDLE             MiniportAdapterContext,
-    IN NDIS_OID                Oid,
-    IN PVOID                   InformationBuffer,
-    IN ULONG                   InformationBufferLength,
-    OUT PULONG                 BytesRead,
-    OUT PULONG                 BytesNeeded
+    IN NDIS_HANDLE                                  MiniportAdapterContext,
+    IN NDIS_OID                                     Oid,
+    __in_bcount(InformationBufferLength) IN PVOID   InformationBuffer,
+    IN ULONG                                        InformationBufferLength,
+    OUT PULONG                                      BytesRead,
+    OUT PULONG                                      BytesNeeded
     )
 /*++
 
@@ -558,12 +569,12 @@ Return Value:
 
 VOID
 MPProcessSetPowerOid(
-    IN OUT PNDIS_STATUS          pNdisStatus,
-    IN PADAPT                    pAdapt,
-    IN PVOID                     InformationBuffer,
-    IN ULONG                     InformationBufferLength,
-    OUT PULONG                   BytesRead,
-    OUT PULONG                   BytesNeeded
+    IN OUT PNDIS_STATUS                             pNdisStatus,
+    IN PADAPT                                       pAdapt,
+    __in_bcount(InformationBufferLength) IN PVOID   InformationBuffer,
+    IN ULONG                                        InformationBufferLength,
+    OUT PULONG                                      BytesRead,
+    OUT PULONG                                      BytesNeeded
     )
 /*++
 
@@ -668,12 +679,15 @@ Return Value:
             // 
             if (pAdapt->LastIndicatedStatus != pAdapt->LatestUnIndicateStatus)
             {
-               NdisMIndicateStatus(pAdapt->MiniportHandle,
-                                        pAdapt->LatestUnIndicateStatus,
-                                        (PVOID)NULL,
-                                        0);
-               NdisMIndicateStatusComplete(pAdapt->MiniportHandle);
-               pAdapt->LastIndicatedStatus = pAdapt->LatestUnIndicateStatus;
+               if (pAdapt->MiniportHandle != NULL)
+               {
+                   NdisMIndicateStatus(pAdapt->MiniportHandle,
+                                            pAdapt->LatestUnIndicateStatus,
+                                            (PVOID)NULL,
+                                            0);
+                   NdisMIndicateStatusComplete(pAdapt->MiniportHandle);
+                   pAdapt->LastIndicatedStatus = pAdapt->LatestUnIndicateStatus;
+               }
             }
         }
         else
@@ -857,6 +871,9 @@ Return Value:
 
     DBGPRINT(("==>MiniportHalt: Adapt %p\n", pAdapt));
 
+    pAdapt->MiniportHandle = NULL;
+    pAdapt->MiniportIsHalted = TRUE;
+
     //
     // Remove this adapter from the global list
     //
@@ -882,6 +899,7 @@ Return Value:
     //
     // If we have a valid bind, close the miniport below the protocol
     //
+#pragma prefast(suppress: __WARNING_DEREF_NULL_PTR, "pAdapt cannot be NULL")
     if (pAdapt->BindingHandle != NULL)
     {
         //
@@ -900,14 +918,15 @@ Return Value:
         ASSERT (Status == NDIS_STATUS_SUCCESS);
 
         pAdapt->BindingHandle = NULL;
+        
+        PtDereferenceAdapt(pAdapt);
     }
 
-    //
-    //  Free all resources on this adapter structure.
-    //
-    MPFreeAllPacketPools (pAdapt);
-    NdisFreeSpinLock(&pAdapt->Lock);
-    NdisFreeMemory(pAdapt, 0, 0);
+    if (PtDereferenceAdapt(pAdapt))
+    {
+        pAdapt = NULL;
+    }
+        
 
     DBGPRINT(("<== MiniportHalt: pAdapt %p\n", pAdapt));
 }

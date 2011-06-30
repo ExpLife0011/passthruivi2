@@ -38,6 +38,7 @@ Return Value:
     PADAPT            pAdapt = (PADAPT)ProtocolBindingContext;
     PNDIS_PACKET      MyPacket, Packet = NULL;
     NDIS_STATUS       Status = NDIS_STATUS_SUCCESS;
+    ULONG             Proc = KeGetCurrentProcessorNumber();
 
     PUCHAR            PacketData, PacketDataNew, TempPointer;
     UINT              BufferLength, PacketLength;
@@ -49,8 +50,6 @@ Return Value:
     ULONG             prefix_len = 0;
     BOOLEAN           ret;
     UINT              PacketIndicateSize = 0;   // bytes need to be indicated up in the buffer
-
-    //DBGPRINT(("==> PtReceive called.\n"));
     
     if ((!pAdapt->MiniportHandle) || (pAdapt->MPDeviceState > NdisDeviceStateD0))
     {
@@ -114,7 +113,6 @@ Return Value:
                     NdisDprFreePacket(MyPacket);
                     break;
                 }
-                //NdisZeroMemory(PacketData, PacketLength);
                 
                 // Copy packet content from buffer
                 NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -575,9 +573,17 @@ Return Value:
                 // Get the original packet (it could be the same packet as the
                 // one received or a different one based on the number of layered
                 // miniports below) and set it on the indicated packet so the OOB
-                // data is visible correctly at protocols above.
+                // data is visible correctly at protocols above.  If the IM driver 
+                // modifies the packet in any way it should not set the new packet's
+                // original packet equal to the original packet of the packet that 
+                // was indicated to it from the underlying driver, in this case, the 
+                // IM driver should also ensure that the related per packet info should
+                // be copied to the new packet.
+                // we can set the original packet to the original packet of the packet
+                // indicated from the underlying driver because the driver doesn't modify
+                // the data content in the packet.
                 //
-                NDIS_SET_ORIGINAL_PACKET(MyPacket, NDIS_GET_ORIGINAL_PACKET(Packet));
+                //NDIS_SET_ORIGINAL_PACKET(MyPacket, NDIS_GET_ORIGINAL_PACKET(Packet));
                 NDIS_SET_PACKET_HEADER_SIZE(MyPacket, HeaderBufferSize);
 
                 //
@@ -598,16 +604,7 @@ Return Value:
                 // this packet as soon as the call to NdisMIndicateReceivePacket
                 // returns.
                 //
-                // NOTE: we queue the packet and indicate this packet immediately with
-                // the already queued packets together. We have to the queue the packet 
-                // first because some versions of NDIS might call protocols' 
-                // ReceiveHandler(not ReceivePacketHandler) if the packet indicate status 
-                // is NDIS_STATUS_RESOURCES. If the miniport below indicates an array of 
-                // packets, some of them with status NDIS_STATUS_SUCCESS, some of them 
-                // with status NDIS_STATUS_RESOURCES, PtReceive might be called, by 
-                // doing this way, we preserve the receive order of packets.
-                // 
-                PtQueueReceivedPacket(pAdapt, MyPacket, TRUE);
+                NdisMIndicateReceivePacket(pAdapt->MiniportHandle, &MyPacket, 1);
                 
                 //
                 // Reclaim the memory and buffer we allocate for NAT
@@ -649,27 +646,11 @@ Return Value:
         // Fall through if the miniport below us has either not
         // indicated a packet or we could not allocate one
         //
-        if (Packet != NULL)
-        {
-            //
-            // We are here because we failed to allocate packet
-            //
-            PtFlushReceiveQueue(pAdapt);
-        }
-        //
-        // Here the driver checks if the miniport adapter is in lower power state, do not indicate the 
-        // packets, but the check does not close the window, it only minimizes the window. To close
-        // the window completely, we need to add synchronization in the receive code path; because 
-        // NDIS can handle the case that miniport drivers indicate packets in lower power state,
-        // we don't add the synchronization in the hot code path.
-        //    
-        if ((pAdapt->MiniportHandle == NULL)
-                || (pAdapt->MPDeviceState > NdisDeviceStateD0))
+        pAdapt->ReceivedIndicationFlags[Proc] = TRUE;
+        if (pAdapt->MiniportHandle == NULL)
         {
             break;
         }
-        
-        pAdapt->IndicateRcvComplete = TRUE;
         switch (pAdapt->Medium)
         {
             case NdisMedium802_3:
@@ -758,8 +739,6 @@ Return Value:
     ULONG               prefix_len = 0;
     BOOLEAN             ret;
     UINT                PacketIndicateSize = 0;   // bytes need to be sent in the buffer
-
-    //DBGPRINT(("==> PtReceivePacket called.\n"));
     
     //
     // Drop the packet silently if the upper miniport edge isn't initialized or
@@ -803,7 +782,6 @@ Return Value:
             NdisDprFreePacket(MyPacket);
             return 0;
         }
-        //NdisZeroMemory(PacketData, PacketLength);
         
         // Copy packet content from buffer
         NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -1238,7 +1216,7 @@ Return Value:
         // below) and set it on the indicated packet so the OOB data is visible
         // correctly to protocols above us.
         //
-        NDIS_SET_ORIGINAL_PACKET(MyPacket, NDIS_GET_ORIGINAL_PACKET(Packet));
+        //NDIS_SET_ORIGINAL_PACKET(MyPacket, NDIS_GET_ORIGINAL_PACKET(Packet));
 
         //
         // Set Packet Flags
@@ -1251,13 +1229,9 @@ Return Value:
         
         NDIS_SET_PACKET_HEADER_SIZE(MyPacket, NDIS_GET_PACKET_HEADER_SIZE(Packet));
 
-        if (Status == NDIS_STATUS_RESOURCES)
+        if (pAdapt->MiniportHandle != NULL)
         {
-            PtQueueReceivedPacket(pAdapt, MyPacket, TRUE);
-        }
-        else
-        {
-            PtQueueReceivedPacket(pAdapt, MyPacket, FALSE);
+            NdisMIndicateReceivePacket(pAdapt->MiniportHandle, &MyPacket, 1);
         }
 
         //

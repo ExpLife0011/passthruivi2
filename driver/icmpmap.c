@@ -294,7 +294,7 @@ Return Value:
 {
     USHORT    ret = 0;
     SHORT     remaining;
-    LONG      MaxIds = 65536 / mod;
+    LONG      MaxIds = 65536 / LocalPrefixInfo.Ratio;
     
     USHORT    rover;
     USHORT    low;
@@ -331,13 +331,13 @@ Return Value:
         
         if (xlate_mode)   // 1:N id mapping
         {
-            low = (USHORT)(1024 / mod) + 1;
+            low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
             high = MaxIds - 1;
             remaining = (high - low) + 1;
     
             if (IdListLength != 0)
             {
-                rover = (USHORT)(LastAllocatedId / mod) + 1;
+                rover = (USHORT)(LastAllocatedId / LocalPrefixInfo.Ratio) + 1;
             }
             else
             {
@@ -346,7 +346,7 @@ Return Value:
             
             do
             {
-                ret = rover * mod + res;
+                ret = rover * LocalPrefixInfo.Ratio + LocalPrefixInfo.Offset;
                 if (IcmpIdMapInTable[ret].Map == NULL)
                 {
                     // find idle ivi-id

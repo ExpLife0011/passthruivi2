@@ -3,11 +3,7 @@
 
 #include "prefix.h"
 
-extern UCHAR    prefix[16];
-extern USHORT   prefix_length;
-extern USHORT   mod;
-extern UCHAR    mod_ratio;
-extern USHORT   res;
+
 extern UCHAR    GatewayMAC[6];
 extern UINT     enable_xlate;
 extern UINT     xlate_mode;
@@ -33,7 +29,7 @@ Return Value:
 
 --*/
 
-#define IsIviAddress(_addr) NdisEqualMemory((_addr)->u.byte, prefix, prefix_length / 8)
+#define IsIviAddress(_addr) NdisEqualMemory((_addr)->u.byte, LocalPrefixInfo.Prefix.u.byte, LocalPrefixInfo.PrefixLength / 8)
 
 
 BOOLEAN

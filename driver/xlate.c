@@ -1,13 +1,7 @@
 #include "precomp.h"
 #pragma hdrstop
 
-UCHAR   prefix[16]      = { 0x20, 0x01, 0x0d, 0xa8, 0xff };
-USHORT  prefix_length   = 40;    // in bits!! prefix_length must be a multiple of 8
-USHORT  mod             = 256;   // 2^k
-UCHAR   mod_ratio       = 0x80;  // k is shifted to higher 4 bit already
-USHORT  res             = 1;
 
-// MAC for local NICs and gateway
 UCHAR   GatewayMAC[6]   = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
 
 UINT    enable_xlate    = 1;  /* default to 1 */

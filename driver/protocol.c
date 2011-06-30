@@ -17,9 +17,6 @@ Environment:
 
 Revision History:
 
-	Revised for IVI port mapping by Shang Wentao
-  Date:
-	April 21, 2009
 
 --*/
 
@@ -29,6 +26,16 @@ Revision History:
 
 #define MAX_PACKET_POOL_SIZE 0x0000FFFF
 #define MIN_PACKET_POOL_SIZE 0x000000FF
+
+//
+// NDIS version as 0xMMMMmmmm, where M=Major/m=minor (0x00050001 = 5.1); 
+// initially unknown (0)
+// 
+ULONG       NdisDotSysVersion =  0x0;
+
+
+#define NDIS_SYS_VERSION_51       0x00050001
+
 
 VOID
 PtBindAdapter(
@@ -63,11 +70,12 @@ Return Value:
     NDIS_HANDLE                     ConfigHandle = NULL;
     PNDIS_CONFIGURATION_PARAMETER   Param;
     NDIS_STRING                     DeviceStr = NDIS_STRING_CONST("UpperBindings");
+    NDIS_STRING                     NdisVersionStr = NDIS_STRING_CONST("NdisVersion");
     PADAPT                          pAdapt = NULL;
     NDIS_STATUS                     Sts;
     UINT                            MediumIndex;
     ULONG                           TotalSize;
-    BOOLEAN                         LockAllocated = FALSE;
+    BOOLEAN                         NoCleanUpNeeded = FALSE;
 
 
     UNREFERENCED_PARAMETER(BindContext);
@@ -88,6 +96,20 @@ Return Value:
         if (*Status != NDIS_STATUS_SUCCESS)
         {
             break;
+        }
+        if (NdisDotSysVersion == 0)
+        {
+            NdisReadConfiguration(Status,
+                                  &Param,
+                                  ConfigHandle,
+                                  &NdisVersionStr,        // "NdisVersion"
+                                  NdisParameterInteger);
+            if (*Status != NDIS_STATUS_SUCCESS)
+            {
+                break;
+            }
+            
+            NdisDotSysVersion = Param->ParameterData.IntegerData;
         }
 
         //
@@ -146,7 +168,6 @@ Return Value:
 
         NdisInitializeEvent(&pAdapt->Event);
         NdisAllocateSpinLock(&pAdapt->Lock);
-        LockAllocated = TRUE;
 
         //
         // Allocate a packet pool for sends. We need this to pass sends down.
@@ -182,7 +203,7 @@ Return Value:
         
         
         //
-		// Allocate a packet pool for Sends.
+		// Allocate a buffer pool for sends.
 		//
         NdisAllocateBufferPool(Status,
                                &pAdapt->SendBufferPoolHandle,
@@ -194,7 +215,7 @@ Return Value:
         }
 		
 		//
-        // Allocate a packet pool for Receives.
+        // Allocate a buffer pool for receives.
 		//
         NdisAllocateBufferPool(Status,
                                &pAdapt->RecvBufferPoolHandle,
@@ -204,10 +225,7 @@ Return Value:
         {
             break;
         }
-
         
-        
-        pAdapt->PTDeviceState = NdisDeviceStateD0;
 
         //
         // Now open the adapter below and complete the initialization
@@ -234,7 +252,9 @@ Return Value:
         {
             break;
         }
+        PtReferenceAdapt(pAdapt);
 
+#pragma prefast(suppress: __WARNING_POTENTIAL_BUFFER_OVERFLOW, "Ndis guarantees MediumIndex to be within bounds");
         pAdapt->Medium = MediumArray[MediumIndex];
 
         //
@@ -246,16 +266,31 @@ Return Value:
         pAdapt->MiniportInitPending = TRUE;
         NdisInitializeEvent(&pAdapt->MiniportInitEvent);
 
+        PtReferenceAdapt(pAdapt);
+
         *Status = NdisIMInitializeDeviceInstanceEx(DriverHandle,
                                            &pAdapt->DeviceName,
                                            pAdapt);
 
         if (*Status != NDIS_STATUS_SUCCESS)
         {
+            if (pAdapt->MiniportIsHalted == TRUE)
+            {
+                NoCleanUpNeeded = TRUE;
+            }
+            
             DBGPRINT(("BindAdapter: Adapt %p, IMInitializeDeviceInstance error %x\n",
                 pAdapt, *Status));
+            
+            if (PtDereferenceAdapt(pAdapt))
+            {
+                pAdapt = NULL;
+            }
+            
             break;
         }
+        
+        PtDereferenceAdapt(pAdapt);
 
     } while(FALSE);
 
@@ -268,7 +303,7 @@ Return Value:
         NdisCloseConfiguration(ConfigHandle);
     }
 
-    if (*Status != NDIS_STATUS_SUCCESS)
+    if ((*Status != NDIS_STATUS_SUCCESS) && (NoCleanUpNeeded == FALSE))
     {
         if (pAdapt != NULL)
         {
@@ -290,35 +325,12 @@ Return Value:
                     NdisWaitEvent(&pAdapt->Event, 0);
                     LocalStatus = pAdapt->Status;
                 }
+                if (PtDereferenceAdapt(pAdapt))
+                {
+                    pAdapt = NULL;
+                }
             }
 
-            if (pAdapt->SendPacketPoolHandle != NULL)
-            {
-                NdisFreePacketPool(pAdapt->SendPacketPoolHandle);
-            }
-
-            if (pAdapt->RecvPacketPoolHandle != NULL)
-            {
-                NdisFreePacketPool(pAdapt->RecvPacketPoolHandle);
-            }
-            
-            if (pAdapt->SendBufferPoolHandle != NULL)
-            {
-                NdisFreeBufferPool(pAdapt->SendBufferPoolHandle);
-            }
-            
-            if (pAdapt->RecvBufferPoolHandle != NULL)
-            {
-                NdisFreeBufferPool(pAdapt->RecvBufferPoolHandle);
-            }
-            
-            if (LockAllocated == TRUE)
-            {
-                NdisFreeSpinLock(&pAdapt->Lock);
-            }
-
-            NdisFreeMemory(pAdapt, 0, 0);
-            pAdapt = NULL;
         }
     }
 
@@ -364,7 +376,7 @@ Return Value:
 
 VOID
 PtUnbindAdapter(
-    OUT PNDIS_STATUS        Status,
+    OUT PNDIS_STATUS           Status,
     IN  NDIS_HANDLE            ProtocolBindingContext,
     IN  NDIS_HANDLE            UnbindContext
     )
@@ -391,10 +403,6 @@ Return Value:
 {
     PADAPT         pAdapt =(PADAPT)ProtocolBindingContext;
     NDIS_STATUS    LocalStatus;
-    PNDIS_PACKET   PacketArray[MAX_RECEIVE_PACKET_ARRAY_SIZE];
-    ULONG          NumberOfPackets = 0, i;
-    BOOLEAN        CompleteRequest = FALSE;
-    BOOLEAN        ReturnPackets = FALSE;
 
     UNREFERENCED_PARAMETER(UnbindContext);
     
@@ -409,40 +417,17 @@ Return Value:
     if (pAdapt->QueuedRequest == TRUE)
     {
         pAdapt->QueuedRequest = FALSE;
-        CompleteRequest = TRUE;
-    }
-    if (pAdapt->ReceivedPacketCount > 0)
-    {
+        NdisReleaseSpinLock(&pAdapt->Lock);
 
-        NdisMoveMemory(PacketArray,
-                      pAdapt->ReceivedPackets,
-                      pAdapt->ReceivedPacketCount * sizeof(PNDIS_PACKET));
-
-        NumberOfPackets = pAdapt->ReceivedPacketCount;
-
-        pAdapt->ReceivedPacketCount = 0;
-        ReturnPackets = TRUE;
-    }
-        
-        
-    NdisReleaseSpinLock(&pAdapt->Lock);
-
-    if (CompleteRequest == TRUE)
-    {
         PtRequestComplete(pAdapt,
                          &pAdapt->Request,
                          NDIS_STATUS_FAILURE );
 
     }
-    if (ReturnPackets == TRUE)
+    else
     {
-        for (i = 0; i < NumberOfPackets; i++)
-        {
-            MPReturnPacket(pAdapt, PacketArray[i]);
-        }
+        NdisReleaseSpinLock(&pAdapt->Lock);
     }
-
-    
 #ifndef WIN9X
     //
     // Check if we had called NdisIMInitializeDeviceInstanceEx and
@@ -677,8 +662,15 @@ Return Value:
         *pAdapt->BytesReadOrWritten = NdisRequest->DATA.QUERY_INFORMATION.BytesWritten;
         *pAdapt->BytesNeeded = NdisRequest->DATA.QUERY_INFORMATION.BytesNeeded;
 
-        if ((Oid == OID_GEN_MAC_OPTIONS) && (Status == NDIS_STATUS_SUCCESS))
+        if (((Oid == OID_GEN_MAC_OPTIONS) 
+              && (Status == NDIS_STATUS_SUCCESS))
+              && (NdisDotSysVersion >= NDIS_SYS_VERSION_51))
         {
+            //
+            // Only do this on Windows XP or greater (NDIS.SYS v 5.1); 
+            // do not do in Windows 2000 (NDIS.SYS v 5.0))
+            //
+                
             //
             // Remove the no-loopback bit from mac-options. In essence we are
             // telling NDIS that we can handle loopback. We don't, but the
@@ -1003,8 +995,6 @@ Return Value:
 {
     PADAPT      pAdapt =(PADAPT)ProtocolBindingContext;
 
-    DBGPRINT(("==> PtTransferDataComplete called!"));
-
     if(pAdapt->MiniportHandle)
     {
         NdisMTransferDataComplete(pAdapt->MiniportHandle,
@@ -1038,14 +1028,11 @@ Return Value:
 --*/
 {
     PADAPT        pAdapt =(PADAPT)ProtocolBindingContext;
-
-    //DBGPRINT(("==> PtReceiveComplete called.\n"));
+    ULONG         Proc = KeGetCurrentProcessorNumber();
     
-    PtFlushReceiveQueue(pAdapt);
-        
-    if ((pAdapt->MiniportHandle != NULL)
-                && (pAdapt->MPDeviceState == NdisDeviceStateD0)
-                && (pAdapt->IndicateRcvComplete == TRUE))
+    if (((pAdapt->MiniportHandle != NULL)
+                && (pAdapt->MPDeviceState == NdisDeviceStateD0))
+                && (pAdapt->ReceivedIndicationFlags[Proc]))
     {
         switch (pAdapt->Medium)
         {
@@ -1068,7 +1055,7 @@ Return Value:
         }
     }
 
-    pAdapt->IndicateRcvComplete = FALSE;
+    pAdapt->ReceivedIndicationFlags[Proc] = FALSE;
 }
 
 
@@ -1252,9 +1239,6 @@ Return Value:
     NDIS_DEVICE_POWER_STATE        PrevDeviceState = pAdapt->PTDeviceState;  
     NDIS_STATUS                    Status;
     NDIS_STATUS                    ReturnStatus;
-#ifdef NDIS51
-    ULONG                          PendingIoCount = 0;
-#endif // NDIS51
 
     ReturnStatus = NDIS_STATUS_SUCCESS;
 
@@ -1379,164 +1363,51 @@ Return Value:
 }
 
 VOID
-PtQueueReceivedPacket(
-    IN PADAPT       pAdapt,
-    IN PNDIS_PACKET Packet,
-    IN BOOLEAN      DoIndicate
+PtReferenceAdapt(
+    IN PADAPT     pAdapt
     )
-/*++
-
-Routine Description:
-
-    This is to queue the received packets and indicates them up if the given Packet
-    status is NDIS_STATUS_RESOURCES, or the array is full.
-
-Arguments:
-
-    pAdapt   -    Pointer to the adpater structure.
-    Packet   -    Pointer to the indicated packet.
-    DoIndicate -  Do the indication now.
-    
-Return Value:
-
-    None.
-    
---*/
 {
-    PNDIS_PACKET    PacketArray[MAX_RECEIVE_PACKET_ARRAY_SIZE];
-    ULONG           NumberOfPackets = 0, i;
+    NdisAcquireSpinLock(&pAdapt->Lock);
     
-    NdisDprAcquireSpinLock(&pAdapt->Lock);
-    ASSERT(pAdapt->ReceivedPacketCount < MAX_RECEIVE_PACKET_ARRAY_SIZE);
+    ASSERT(pAdapt->RefCount >= 0);
 
-    //
-    // pAdapt->ReceviePacketCount must be less than MAX_RECEIVE_PACKET_ARRAY_SIZE because
-    // the thread which held the pVElan->Lock before should already indicate the packet(s) 
-    // up if pAdapt->ReceviePacketCount == MAX_RECEIVE_PACKET_ARRAY_SIZE.
-    // 
-    pAdapt->ReceivedPackets[pAdapt->ReceivedPacketCount] = Packet;
-    pAdapt->ReceivedPacketCount++;
+    pAdapt->RefCount ++;
+    NdisReleaseSpinLock(&pAdapt->Lock);
+}
 
-    // 
-    //  If our receive packet array is full, or the miniport below indicated the packets
-    //  with resources, do the indicatin now.
-    //  
-    if ((pAdapt->ReceivedPacketCount == MAX_RECEIVE_PACKET_ARRAY_SIZE) || DoIndicate)
+
+BOOLEAN
+PtDereferenceAdapt(
+    IN PADAPT     pAdapt
+    )
+{
+    NdisAcquireSpinLock(&pAdapt->Lock);
+
+    ASSERT(pAdapt->RefCount > 0);
+
+    pAdapt->RefCount--;
+
+    if (pAdapt->RefCount == 0)
     {
-        NdisMoveMemory(PacketArray,
-                       pAdapt->ReceivedPackets,
-                       pAdapt->ReceivedPacketCount * sizeof(PNDIS_PACKET));
-
-        NumberOfPackets = pAdapt->ReceivedPacketCount;
+        NdisReleaseSpinLock(&pAdapt->Lock);
+        
         //
-        // So other thread can queue the received packets
+        // Free all resources on this adapter structure.
         //
-        pAdapt->ReceivedPacketCount = 0;
-               
-        NdisDprReleaseSpinLock(&pAdapt->Lock);
-
-        //
-        // Here the driver checks if the miniport adapter is in lower power state, do not indicate the 
-        // packets, but the check does not close the window, it only minimizes the window. To close
-        // the window completely, we need to add synchronization in the receive code path; because 
-        // NDIS can handle the case that miniport drivers indicate packets in lower power state,
-        // we don't add the synchronization in the hot code path.
-        //    
-        if ((pAdapt->MiniportHandle != NULL) 
-                && (pAdapt->MPDeviceState == NdisDeviceStateD0))
-        {
-            NdisMIndicateReceivePacket(pAdapt->MiniportHandle, PacketArray, NumberOfPackets);
-        }
-        else
-        {
-            if (DoIndicate)
-            {
-                NumberOfPackets  -= 1;
-            }
-            for (i = 0; i < NumberOfPackets; i++)
-            {
-                MPReturnPacket(pAdapt, PacketArray[i]);
-            }
-        }
-
+        MPFreeAllPacketPools(pAdapt);
+        MPFreeAllBufferPools(pAdapt);
+        NdisFreeSpinLock(&pAdapt->Lock);
+        NdisFreeMemory(pAdapt, 0 , 0);
+        
+        return TRUE;
+        
     }
     else
     {
-        NdisDprReleaseSpinLock(&pAdapt->Lock);
+        NdisReleaseSpinLock(&pAdapt->Lock);
+
+        return FALSE;
     }
-                    
 }
 
-VOID
-PtFlushReceiveQueue(
-    IN PADAPT         pAdapt
-    )
-/*++
-
-Routine Description:
-
-    This routine process the queued the packet, if anything is fine, indicate the packet 
-    up, otherwise, return the packet to the underlying miniports.
-
-Arguments:
-
-    pAdapt   -    Pointer to the adpater structure.
-    
-Return Value:
-
-    None.
-*/    
-{
-
-    PNDIS_PACKET  PacketArray[MAX_RECEIVE_PACKET_ARRAY_SIZE];
-    ULONG         NumberOfPackets = 0, i;
-
-    do
-    {
-        NdisDprAcquireSpinLock(&pAdapt->Lock);
-
-        if (pAdapt->ReceivedPacketCount > 0)
-        {
-	    NdisMoveMemory(PacketArray,
-                            pAdapt->ReceivedPackets,
-                            pAdapt->ReceivedPacketCount * sizeof(PNDIS_PACKET));
-
-            NumberOfPackets = pAdapt->ReceivedPacketCount;
-            //
-            // So other thread can queue the received packets
-            //
-            pAdapt->ReceivedPacketCount = 0;
-
-            NdisDprReleaseSpinLock(&pAdapt->Lock);
-               
-            //
-            // Here the driver checks if the miniport adapter is in lower power state, do not indicate the 
-            // packets, but the check does not close the window, it only minimizes the window. To close
-            // the window completely, we need to add synchronization in the receive code path; because 
-            // NDIS can handle the case that miniport drivers indicate packets in lower power state,
-            // we don't add the synchronization in the hot code path.
-            //    
-            if ((pAdapt->MiniportHandle)
-                    && (pAdapt->MPDeviceState == NdisDeviceStateD0))
-            {
-                NdisMIndicateReceivePacket(pAdapt->MiniportHandle, 
-                                           PacketArray, 
-                                           NumberOfPackets);
-                break;
-            }
-            //
-            // We need return the packet here
-            // 
-            for (i = 0; i < NumberOfPackets; i ++)
-            {
-                MPReturnPacket(pAdapt, PacketArray[i]);
-            }
-            break;
-        }
-        
-        NdisDprReleaseSpinLock(&pAdapt->Lock);
-        
-    
-    } while (FALSE);
-}
 

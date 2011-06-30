@@ -41,9 +41,12 @@ Revision History:
 #define TAG 'ImPa'
 #define WAIT_INFINITE 0
 
+
+
 //advance declaration
 typedef struct _ADAPT ADAPT, *PADAPT;
 
+DRIVER_INITIALIZE DriverEntry;
 extern
 NTSTATUS
 DriverEntry(
@@ -51,6 +54,7 @@ DriverEntry(
     IN PUNICODE_STRING           RegistryPath
     );
 
+DRIVER_DISPATCH PtDispatch;
 NTSTATUS
 PtDispatch(
     IN PDEVICE_OBJECT            DeviceObject,
@@ -67,6 +71,7 @@ PtDeregisterDevice(
     VOID
    );
 
+DRIVER_UNLOAD PtUnload;
 VOID
 PtUnloadProtocol(
     VOID
@@ -242,12 +247,12 @@ MPQueryInformation(
 
 NDIS_STATUS
 MPSetInformation(
-    IN NDIS_HANDLE                MiniportAdapterContext,
-    IN NDIS_OID                   Oid,
-    IN PVOID                      InformationBuffer,
-    IN ULONG                      InformationBufferLength,
-    OUT PULONG                    BytesRead,
-    OUT PULONG                    BytesNeeded
+    IN NDIS_HANDLE                                      MiniportAdapterContext,
+    IN NDIS_OID                                         Oid,
+    __in_bcount(InformationBufferLength) IN PVOID       InformationBuffer,
+    IN ULONG                                            InformationBufferLength,
+    OUT PULONG                                          BytesRead,
+    OUT PULONG                                          BytesNeeded
     );
 
 VOID
@@ -278,12 +283,6 @@ MPQueryPNPCapabilities(
     OUT PNDIS_STATUS              Status
     );
 
-
-NDIS_STATUS
-MPSetMiniportSecondary ( 
-    IN PADAPT                    Secondary, 
-    IN PADAPT                    Primary
-    );
 
 #ifdef NDIS51_MINIPORT
 
@@ -318,25 +317,25 @@ MPFreeAllBufferPools(
     IN PADAPT                    pAdapt
     );
 
-NDIS_STATUS 
-MPPromoteSecondary ( 
-    IN PADAPT                    pAdapt 
-    );
-
-
-NDIS_STATUS 
-MPBundleSearchAndSetSecondary (
-    IN PADAPT                    pAdapt 
-    );
 
 VOID
 MPProcessSetPowerOid(
-    IN OUT PNDIS_STATUS          pNdisStatus,
-    IN PADAPT                    pAdapt,
-    IN PVOID                     InformationBuffer,
-    IN ULONG                     InformationBufferLength,
-    OUT PULONG                   BytesRead,
-    OUT PULONG                   BytesNeeded
+    IN OUT PNDIS_STATUS                             pNdisStatus,
+    IN PADAPT                                       pAdapt,
+    __in_bcount(InformationBufferLength) IN PVOID   InformationBuffer,
+    IN ULONG                                        InformationBufferLength,
+    OUT PULONG                                      BytesRead,
+    OUT PULONG                                      BytesNeeded
+    );
+
+VOID
+PtReferenceAdapt(
+    IN PADAPT     pAdapt
+    );
+
+BOOLEAN
+PtDereferenceAdapt(
+    IN PADAPT     pAdapt
     );
 
 
@@ -358,6 +357,7 @@ MPProcessSetPowerOid(
 #endif // if DBG 
 
 #define    NUM_PKTS_IN_POOL    256
+
 
 //
 // Protocol reserved part of a sent packet that is allocated by us.
@@ -402,7 +402,6 @@ typedef struct _PASSTHRU_EVENT
 
 } PASSTHRU_EVENT, *PPASSTHRU_EVENT;
 
-#define MAX_RECEIVE_PACKET_ARRAY_SIZE           40
 
 //
 // Structure used by both the miniport as well as the protocol part of the intermediate driver
@@ -424,7 +423,7 @@ typedef struct _ADAPT
                                                 // are serialized down to us.
     PULONG                         BytesNeeded;
     PULONG                         BytesReadOrWritten;
-    BOOLEAN                        IndicateRcvComplete;
+    BOOLEAN                        ReceivedIndicationFlags[32];
     
     BOOLEAN                        OutstandingRequests;      // TRUE iff a request is pending
                                                         // at the miniport below
@@ -445,8 +444,8 @@ typedef struct _ADAPT
     NDIS_STATUS                    LastIndicatedStatus;    // The last indicated media status
     NDIS_STATUS                    LatestUnIndicateStatus; // The latest suppressed media status
     ULONG                          OutstandingSends;
-    PNDIS_PACKET                   ReceivedPackets[MAX_RECEIVE_PACKET_ARRAY_SIZE];
-    ULONG                          ReceivedPacketCount;
+    LONG                           RefCount;
+    BOOLEAN                        MiniportIsHalted;
     
     // Add by Wentao
     NDIS_HANDLE                    SendBufferPoolHandle;
@@ -461,17 +460,6 @@ extern    NDIS_MEDIUM                        MediumArray[4];
 extern    PADAPT                             pAdaptList;
 extern    NDIS_SPIN_LOCK                     GlobalLock;
 
-#ifndef NDIS_PACKET_FIRST_NDIS_BUFFER
-#define NDIS_PACKET_FIRST_NDIS_BUFFER(_Packet)      ((_Packet)->Private.Head)
-#endif
-
-#ifndef NDIS_PACKET_LAST_NDIS_BUFFER
-#define NDIS_PACKET_LAST_NDIS_BUFFER(_Packet)       ((_Packet)->Private.Tail)
-#endif
-
-#ifndef NDIS_PACKET_VALID_COUNTS
-#define NDIS_PACKET_VALID_COUNTS(_Packet)           ((_Packet)->Private.ValidCounts)
-#endif
 
 #define ADAPT_MINIPORT_HANDLE(_pAdapt)    ((_pAdapt)->MiniportHandle)
 #define ADAPT_DECR_PENDING_SENDS(_pAdapt)     \
@@ -493,15 +481,3 @@ IsIMDeviceStateOn(
 */
 #define IsIMDeviceStateOn(_pP)        ((_pP)->MPDeviceState == NdisDeviceStateD0 && (_pP)->PTDeviceState == NdisDeviceStateD0 ) 
 
-
-VOID
-PtQueueReceivedPacket(
-    IN PADAPT       pAdapt,
-    IN PNDIS_PACKET Packet,
-    IN BOOLEAN      DoIndicate
-    );
-
-VOID
-PtFlushReceiveQueue(
-    IN PADAPT       pAdapt
-    );

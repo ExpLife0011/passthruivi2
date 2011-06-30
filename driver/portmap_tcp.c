@@ -1283,7 +1283,7 @@ Return Value:
 {
     USHORT    ret = 0;
     SHORT     remaining;
-    LONG      max_ports = 65536 / mod;
+    LONG      max_ports = 65536 / LocalPrefixInfo.Ratio;
     USHORT    rover;
     USHORT    low;
     USHORT    high;
@@ -1352,13 +1352,13 @@ Return Value:
         
         if (xlate_mode)  // 1:N port mapping
         {
-            low = (USHORT)(1024 / mod) + 1;
+            low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
             high = max_ports - 1;
             remaining = (high - low) + 1;
             
             if (StateListLength != 0)
             {
-                rover = (USHORT)(LastAllocatedPort / mod) + 1;
+                rover = (USHORT)(LastAllocatedPort / LocalPrefixInfo.Ratio) + 1;
             }
             else
             {
@@ -1367,7 +1367,7 @@ Return Value:
             
             do
             {
-                ret = rover * mod + res;
+                ret = rover * LocalPrefixInfo.Ratio + LocalPrefixInfo.Offset;
                 if (TcpPortMapInTable[ret].State == NULL)
                 {
                     // Found idle ivi port.

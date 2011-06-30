@@ -119,7 +119,6 @@ Return Value:
                     ADAPT_DECR_PENDING_SENDS(pAdapt);
                     break;
                 }
-                //NdisZeroMemory(PacketData, PacketLength);
                 
                 // Copy packet content from buffer
                 NdisMoveMemory(PacketData, TempPointer, BufferLength);
@@ -536,18 +535,18 @@ Return Value:
                         
                         //DBGPRINT(("==> MPSendPackets: Send an ARP packet.\n"));
                         
-                        DBGPRINT(("==> MPSendPackets: ARP Source MAC is %02x:%02x:%02x:%02x:%02x:%02x.\n", 
+                        DBGPRINT(("==> MPSendPackets: ARP Source MAC is %02x:%02x:%02x:%02x:%02x:%02x\n", 
                                     eh->smac[0], eh->smac[1], eh->smac[2], 
                                     eh->smac[3], eh->smac[4], eh->smac[5]));
-                        DBGPRINT(("==> MPSendPackets: ARP Destination MAC is %02x:%02x:%02x:%02x:%02x:%02x.\n", 
+                        DBGPRINT(("==> MPSendPackets: ARP Destination MAC is %02x:%02x:%02x:%02x:%02x:%02x\n", 
                                     eh->dmac[0], eh->dmac[1], eh->dmac[2], 
                                     eh->dmac[3], eh->dmac[4], eh->dmac[5]));
-                        /*
-                        DBGPRINT(("==> MPSendPackets: ARP Source IP is %02x.%02x.%02x.%02x\n", 
+                        
+                        DBGPRINT(("==> MPSendPackets: ARP Source IP is %d.%d.%d.%d\n", 
                                     ah->sip[0], ah->sip[1], ah->sip[2], ah->sip[3]));
-                        DBGPRINT(("==> MPSendPackets: ARP Destination IP is %02x.%02x.%02x.%02x\n", 
+                        DBGPRINT(("==> MPSendPackets: ARP Destination IP is %d.%d.%d.%d\n", 
                                     ah->dip[0], ah->dip[1], ah->dip[2], ah->dip[3]));
-                        */
+                        
                         
                         // Indicate send success
                         Status = NDIS_STATUS_SUCCESS;
@@ -620,7 +619,7 @@ Return Value:
                             NDIS_SET_PACKET_STATUS(MyPacket, NDIS_STATUS_RESOURCES);
                             
                             //DBGPRINT(("==> MPSendPackets: Queue ARP reply packet with true flag.\n"));
-                            PtQueueReceivedPacket(pAdapt, MyPacket, TRUE);
+                            NdisMIndicateReceivePacket(pAdapt->MiniportHandle, &MyPacket, 1);
                             DBGPRINT(("==> MPSendPackets: ARP reply is indicated.\n"));
                             
                             // We can free resources right now since we queued the packet with true flag.

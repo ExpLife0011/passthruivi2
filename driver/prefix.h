@@ -8,7 +8,9 @@ typedef struct _IVI_PREFIX_MIB
     IN6_ADDR   Prefix;        // IPv6 prefix corresponding to the IPv4 address
     UCHAR      PrefixLength;  // Must be a multiple of 8
     UCHAR      XlateMode;     // 0 for 1:1 mapping, 1 for 1:N mapping
-    USHORT     SuffixCode;    // Compressed representation of Ratio and Index info in host byte order; 0 for 1:1 mapping
+    USHORT     SuffixCode;    // Compressed representation of Ratio and Offset info in host byte order; 0 for 1:1 mapping
+    USHORT     Ratio;         // 16 bit IVI ratio
+    USHORT     Offset;        // 16 bit IVI offset
 } IVI_PREFIX_MIB, *PIVI_PREFIX_MIB;
 
 #define PREFIX_LOOKUP_MAX_RETRIES   5
@@ -46,7 +48,7 @@ typedef struct _PORT_RANGE_OPTION
     UCHAR    length;
     USHORT   rsvd;
     USHORT   ratio;
-    USHORT   index;
+    USHORT   offset;
 } PORT_RANGE_OPTION, *PPORT_RANGE_OPTION;
 
 #define ICMP6_PREF_REQUEST    204
