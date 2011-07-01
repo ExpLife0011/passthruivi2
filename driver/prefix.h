@@ -63,6 +63,7 @@ typedef struct _PORT_RANGE_OPTION
 /* Globals */
 extern LIST_ENTRY        PrefixListHead;
 extern NDIS_SPIN_LOCK    PrefixListLock;
+
 extern IVI_PREFIX_MIB    LocalPrefixInfo;
 extern IN6_ADDR          PrefixServerAddress;
 

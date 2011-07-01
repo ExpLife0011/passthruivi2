@@ -329,7 +329,7 @@ Return Value:
             return FALSE;
         }
         
-        if (xlate_mode)   // 1:N id mapping
+        if (LocalPrefixInfo.XlateMode == 1)   // 1:N id mapping
         {
             low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
             high = MaxIds - 1;

@@ -28,19 +28,37 @@ void PrintShowUsage()
     wcout<<"    ptctl show gateway"<<endl;
 }
 
+void PrintStartUsage()
+{
+    wcout<<endl<<"  ptctl start commands: "<<endl;
+    wcout<<"    ptctl start arp"<<endl;
+    wcout<<"    ptctl start multiplex"<<endl;
+    wcout<<"    ptctl start lookup"<<endl;
+    wcout<<"    ptctl start xlate"<<endl;
+}
+
+void PrintStopUsage()
+{
+    wcout<<endl<<"  ptctl stop commands: "<<endl;
+    wcout<<"    ptctl stop xlate"<<endl;
+    wcout<<"    ptctl stop arp"<<endl;
+    wcout<<"    ptctl stop lookup"<<endl;
+    wcout<<"    ptctl stop multiplex"<<endl;
+}
+
 void PrintAllUsage()
 {
-    wcout<<"ptctl command usage: "<<endl;
+    wcout<<endl<<"ptctl command usage: "<<endl;
     
     PrintSetUsage();
     
     PrintShowUsage();
 
-    wcout<<"  To enable v4/v6 translate,       input 11"<<endl;
-    wcout<<"  To disable v4/v6 translate,      input 12"<<endl;
-    wcout<<"  To enalbe 1:1 mapping,           input 13"<<endl;
-    wcout<<"  To enable 1:N mapping,           input 14"<<endl;
-    wcout<<"For more information, please contact the author at 'wentaoshang@gmail.com'."<<endl<<endl;
+    PrintStartUsage();
+
+    PrintStopUsage();
+
+    wcout<<endl<<"For more information, please contact the author at 'wentaoshang@gmail.com'."<<endl<<endl;
 }
 
 int wmain(int argc, wchar_t *argv[])
@@ -213,8 +231,6 @@ int wmain(int argc, wchar_t *argv[])
     else if (wcscmp(argv[1], L"show") == 0)
     {
         // 'show' commands
-        wcout<<endl;
-
         if (argc != 3)
         {
             PrintShowUsage();
@@ -222,6 +238,8 @@ int wmain(int argc, wchar_t *argv[])
             WSACleanup();
             return 0;
         }
+
+        wcout<<endl;
 
         if (wcscmp(argv[2], L"prefix") == 0)
         {
@@ -318,6 +336,122 @@ int wmain(int argc, wchar_t *argv[])
         else
         {
             PrintShowUsage();
+        }
+    }
+    else if (wcscmp(argv[1], L"start") == 0)
+    {
+        // 'start' commands
+        if (argc != 3)
+        {
+            PrintStartUsage();
+            CloseHandle(PtHandle);
+            WSACleanup();
+            return 0;
+        }
+
+        wcout<<endl;
+
+        if (wcscmp(argv[2], L"xlate") == 0)
+        {
+            // 'start xlate'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_ENABLE_XLATE, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: start ivi failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"arp") == 0)
+        {
+            // 'start arp'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_ENABLE_ARPREPLY, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: enable arp auto reply failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"multiplex") == 0)
+        {
+            // 'start multiplex'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_ENABLE_MULTIPLEX, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: enable address multiplex failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"lookup") == 0)
+        {
+            // 'start lookup'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_ENABLE_PREFIXLOOKUP, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: enable prefix lookup failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else
+        {
+            PrintStartUsage();
+        }
+    }
+    else if (wcscmp(argv[1], L"stop") == 0)
+    {
+        // 'stop' commands
+        if (argc != 3)
+        {
+            PrintStopUsage();
+            CloseHandle(PtHandle);
+            WSACleanup();
+            return 0;
+        }
+
+        wcout<<endl;
+
+        if (wcscmp(argv[2], L"xlate") == 0)
+        {
+            // 'stop xlate'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_DISABLE_XLATE, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: stop ivi failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"arp") == 0)
+        {
+            // 'stop arp'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_DISABLE_ARPREPLY, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: disable arp auto reply failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"multiplex") == 0)
+        {
+            // 'stop multiplex'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_DISABLE_MULTIPLEX, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: disable address multiplex failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else if (wcscmp(argv[2], L"lookup") == 0)
+        {
+            // 'stop lookup'
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_DISABLE_PREFIXLOOKUP, NULL, 0, NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ioctl: disable prefix lookup failed."<<endl;
+            }
+            wcout<<"Done."<<endl;
+        }
+        else
+        {
+            PrintStopUsage();
         }
     }
     else

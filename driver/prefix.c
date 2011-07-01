@@ -27,7 +27,6 @@ Routine Description:
     
     // Initialize local prefix information
     NdisZeroMemory(&LocalPrefixInfo, sizeof(IVI_PREFIX_MIB));
-    LocalPrefixInfo.Address.u.dword = 0;  // XXX: Local IPv4 address set to zero
     LocalPrefixInfo.Prefix.u.byte[0] = 0x20;
     LocalPrefixInfo.Prefix.u.byte[1] = 0x01;
     LocalPrefixInfo.Prefix.u.byte[2] = 0x0d;

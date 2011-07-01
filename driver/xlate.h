@@ -5,8 +5,9 @@
 
 
 extern UCHAR    GatewayMAC[6];
-extern UINT     enable_xlate;
-extern UINT     xlate_mode;
+extern UCHAR    enable_xlate;
+extern UCHAR    enable_arp_reply;
+extern UCHAR    enable_prefix_lookup;
 
 /*++
 

@@ -217,6 +217,7 @@ Return Value:
             else
             {
                 NdisMoveMemory(LocalPrefixInfo.Prefix.u.byte, ioBuffer, inputBufferLength);
+                
                 DBGPRINT(("==> ioctl: set LocalPrefixInfo.Prefix.u.byte[16] to %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", 
                             LocalPrefixInfo.Prefix.u.byte[0], LocalPrefixInfo.Prefix.u.byte[1], LocalPrefixInfo.Prefix.u.byte[2], 
                             LocalPrefixInfo.Prefix.u.byte[3], LocalPrefixInfo.Prefix.u.byte[4], LocalPrefixInfo.Prefix.u.byte[5], 
@@ -224,6 +225,7 @@ Return Value:
                             LocalPrefixInfo.Prefix.u.byte[9], LocalPrefixInfo.Prefix.u.byte[10], LocalPrefixInfo.Prefix.u.byte[11], 
                             LocalPrefixInfo.Prefix.u.byte[12], LocalPrefixInfo.Prefix.u.byte[13], LocalPrefixInfo.Prefix.u.byte[14], 
                             LocalPrefixInfo.Prefix.u.byte[15]));
+                
                 ResetMapListsSafe();
                 DBGPRINT(("==> Old Map List Freed.\n"));
             }
@@ -283,23 +285,43 @@ Return Value:
                 
         case IOCTL_PTUSERIO_ENABLE_XLATE:
             enable_xlate = 1;
-            DBGPRINT(("==> ioctl: translation enabled by user.\n"));
+            DBGPRINT(("==> ioctl: ivi translation enabled by user.\n"));
             break;
             
         case IOCTL_PTUSERIO_DISABLE_XLATE:
             enable_xlate = 0;
-            DBGPRINT(("==> ioctl: translation disabled by user.\n"));
+            DBGPRINT(("==> ioctl: ivi translation disabled by user.\n"));
             break;
             
-        case IOCTL_PTUSERIO_ENABLE_MPLEX:
-            xlate_mode = 1;
+        case IOCTL_PTUSERIO_ENABLE_ARPREPLY:
+            enable_arp_reply = 1;
+            DBGPRINT(("==> ioctl: arp auto reply enabled by user.\n"));
+            break;
+            
+        case IOCTL_PTUSERIO_DISABLE_ARPREPLY:
+            enable_arp_reply = 0;
+            DBGPRINT(("==> ioctl: arp auto reply disabled by user.\n"));
+            break;
+            
+        case IOCTL_PTUSERIO_ENABLE_PREFIXLOOKUP:
+            enable_prefix_lookup = 1;
+            DBGPRINT(("==> ioctl: prefix lookup enabled by user.\n"));
+            break;
+            
+        case IOCTL_PTUSERIO_DISABLE_PREFIXLOOKUP:
+            enable_prefix_lookup = 0;
+            DBGPRINT(("==> ioctl: prefix lookup disabled by user.\n"));
+            break;
+            
+        case IOCTL_PTUSERIO_ENABLE_MULTIPLEX:
+            LocalPrefixInfo.XlateMode = 1;
             DBGPRINT(("==> ioctl: 1:N mapping enabled by user.\n"));
             ResetMapListsSafe();
             DBGPRINT(("==> Old Map List Freed.\n"));
             break;
             
-        case IOCTL_PTUSERIO_DISABLE_MPLEX:
-            xlate_mode = 0;
+        case IOCTL_PTUSERIO_DISABLE_MULTIPLEX:
+            LocalPrefixInfo.XlateMode = 0;
             DBGPRINT(("==> ioctl: 1:N mapping disabled by user.\n"));
             ResetMapListsSafe();
             DBGPRINT(("==> Old Map List Freed.\n"));

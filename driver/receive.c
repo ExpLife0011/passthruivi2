@@ -131,7 +131,7 @@ Return Value:
                 
                 eh = (ETH_HEADER *)(PacketData);
                 
-                if (eh->type == htons(ETH_IP6))
+                if (eh->type == htons(ETH_IP6) && enable_xlate == 1)
                 {
                     // ipv6 packet
                     PIP6_HEADER ip6h = (IP6_HEADER *)(PacketData + sizeof(ETH_HEADER));
@@ -172,23 +172,31 @@ Return Value:
                                 }
                                 else
                                 {
-                                    PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
-                                    
-                                    NdisAcquireSpinLock(&PrefixListLock);
-                                    // Look up the prefix for the src address
-                                    PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
-                                    if (PrefixContext == NULL)
+                                    if (enable_prefix_lookup == 1)
                                     {
-                                        // No entry found. Drop packet.
+                                        PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
+                                        
+                                        NdisAcquireSpinLock(&PrefixListLock);
+                                        // Look up the prefix for the src address
+                                        PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
+                                        if (PrefixContext == NULL)
+                                        {
+                                            // No entry found. Drop packet.
+                                            NdisReleaseSpinLock(&PrefixListLock);
+                                            DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
+                                            Status = NDIS_STATUS_NOT_ACCEPTED;
+                                            NdisFreeMemory(PacketData, 0, 0);
+                                            NdisDprFreePacket(MyPacket);
+                                            break;
+                                        }
+                                        prefix_len = PrefixContext->Mib.PrefixLength;
+                                        
                                         NdisReleaseSpinLock(&PrefixListLock);
-                                        DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
-                                        Status = NDIS_STATUS_NOT_ACCEPTED;
-                                        NdisFreeMemory(PacketData, 0, 0);
-                                        NdisDprFreePacket(MyPacket);
-                                        break;
                                     }
-                                    prefix_len = PrefixContext->Mib.PrefixLength;
-                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    else
+                                    {
+                                        prefix_len = LocalPrefixInfo.PrefixLength;
+                                    }
                                     
                                     // Allocate memory for translated packet
                                     Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
@@ -222,7 +230,7 @@ Return Value:
                                     NdisFreeMemory(PacketDataNew, 0, 0);
                                 }
                             }
-                            else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
+                            else if (icmp6h->type == ICMP6_PREF_RESPONSE && enable_prefix_lookup == 1)  // IVI prefix lookup response
                             {
                                 PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
                                 PIVI_PREFIX_MIB            Mib = NULL;
@@ -800,7 +808,7 @@ Return Value:
         
         eh = (ETH_HEADER *)(PacketData);
         
-        if (eh->type == htons(ETH_IP6))
+        if (eh->type == htons(ETH_IP6) && enable_xlate == 1)
         {
             // ipv6 packet
             PIP6_HEADER ip6h = (IP6_HEADER *)(PacketData + sizeof(ETH_HEADER));
@@ -840,22 +848,30 @@ Return Value:
                         }
                         else  // 6to4 mapping
                         {
-                            PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
-                            
-                            NdisAcquireSpinLock(&PrefixListLock);
-                            // Look up the prefix for the src address
-                            PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
-                            if (PrefixContext == NULL)
+                            if (enable_prefix_lookup == 1)
                             {
-                                // No entry found. Drop packet.
+                                PPREFIX_LOOKUP_CONTEXT PrefixContext = NULL;
+                                
+                                NdisAcquireSpinLock(&PrefixListLock);
+                                // Look up the prefix for the src address
+                                PrefixContext = PrefixLookupAddr6(&(ip6h->saddr));
+                                if (PrefixContext == NULL)
+                                {
+                                    // No entry found. Drop packet.
+                                    NdisReleaseSpinLock(&PrefixListLock);
+                                    DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
+                                    NdisFreeMemory(PacketData, 0, 0);
+                                    NdisDprFreePacket(MyPacket);
+                                    return 0;
+                                }
+                                prefix_len = PrefixContext->Mib.PrefixLength;
+                                
                                 NdisReleaseSpinLock(&PrefixListLock);
-                                DBGPRINT(("==> PtReceive: PrefixLookupAddr6 failed. Drop packet.\n"));
-                                NdisFreeMemory(PacketData, 0, 0);
-                                NdisDprFreePacket(MyPacket);
-                                return 0;
                             }
-                            prefix_len = PrefixContext->Mib.PrefixLength;
-                            NdisReleaseSpinLock(&PrefixListLock);
+                            else
+                            {
+                                prefix_len = LocalPrefixInfo.PrefixLength;
+                            }
                             
                             // Allocate memory for translated packet
                             Status = NdisAllocateMemoryWithTag((PVOID)&PacketDataNew, PacketLength, TAG);
@@ -887,7 +903,7 @@ Return Value:
                             NdisFreeMemory(PacketDataNew, 0, 0);
                         }
                     }
-                    else if (icmp6h->type == ICMP6_PREF_RESPONSE)  // IVI prefix lookup response
+                    else if (icmp6h->type == ICMP6_PREF_RESPONSE && enable_prefix_lookup == 1)  // IVI prefix lookup response
                     {
                         PPREFIX_LOOKUP_CONTEXT     PrefixContext = NULL;
                         PIVI_PREFIX_MIB            Mib = NULL;

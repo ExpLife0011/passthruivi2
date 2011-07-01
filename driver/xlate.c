@@ -1,17 +1,14 @@
 #include "precomp.h"
 #pragma hdrstop
 
+// Ethernet MAC of gateway's NIC
+UCHAR   GatewayMAC[6] = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
 
-UCHAR   GatewayMAC[6]   = { 0x00, 0x0c, 0x29, 0x32, 0xca, 0xab };
+UCHAR   enable_xlate         = 0;  /* default to 0 */
 
-UINT    enable_xlate    = 1;  /* default to 1 */
+UCHAR   enable_arp_reply     = 0;  /* default to 0 */
 
-//
-//   xlate_mode :
-//     0:  1:1 mapping
-//     1:  1:N mapping
-//
-UINT    xlate_mode      = 0;  /* default to 1 */
+UCHAR   enable_prefix_lookup = 0;  /* default to 0 */
 
 
 BOOLEAN

@@ -1350,7 +1350,7 @@ Return Value:
             return 0;
         }
         
-        if (xlate_mode)  // 1:N port mapping
+        if (LocalPrefixInfo.XlateMode == 1)  // 1:N port mapping
         {
             low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
             high = max_ports - 1;
