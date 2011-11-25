@@ -125,8 +125,10 @@ Return Value:
                 }
                 else
                 {
-                    LocalPrefixInfo.Offset = temp1;
+                    LocalPrefixInfo.Offset = temp1 & 0x0fff;
+                    LocalPrefixInfo.SuffixCode = LocalPrefixInfo.SuffixCode & 0x0fff + temp1 & 0x0fff;
                     DBGPRINT(("==> ioctl: set LocalPrefixInfo.Offset to %d\n", LocalPrefixInfo.Offset));
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.SuffixCode to %02x\n", LocalPrefixInfo.SuffixCode));
                     ResetMapListsSafe();
                     DBGPRINT(("==> Old Map List Freed.\n"));
                 }
