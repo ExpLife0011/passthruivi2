@@ -85,7 +85,7 @@ Return Value:
                         temp1 = temp1 >> 1;
                     }
                     temp2 = temp2 << 12;
-                    LocalPrefixInfo.SuffixCode = temp2;
+                    LocalPrefixInfo.SuffixCode = temp2 & 0xf000 + LocalPrefixInfo.SuffixCode & 0x0fff;
                     
                     DBGPRINT(("==> ioctl: set LocalPrefixInfo.Ratio to %d\n", LocalPrefixInfo.Ratio));
                     DBGPRINT(("==> ioctl: set LocalPrefixInfo.SuffixCode to %02x\n", LocalPrefixInfo.SuffixCode));
@@ -126,7 +126,7 @@ Return Value:
                 else
                 {
                     LocalPrefixInfo.Offset = temp1 & 0x0fff;
-                    LocalPrefixInfo.SuffixCode = LocalPrefixInfo.SuffixCode & 0x0fff + temp1 & 0x0fff;
+                    LocalPrefixInfo.SuffixCode = LocalPrefixInfo.SuffixCode & 0xf000 + temp1 & 0x0fff;
                     DBGPRINT(("==> ioctl: set LocalPrefixInfo.Offset to %d\n", LocalPrefixInfo.Offset));
                     DBGPRINT(("==> ioctl: set LocalPrefixInfo.SuffixCode to %02x\n", LocalPrefixInfo.SuffixCode));
                     ResetMapListsSafe();
