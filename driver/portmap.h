@@ -19,15 +19,7 @@ typedef struct _UDP_PORT_MAP
 } UDP_PORT_MAP, *PUDP_PORT_MAP;
 
 
-extern LARGE_INTEGER     UdpTimeOut;
-
-extern LIST_ENTRY        PortListHead;
-extern LONG              PortListLength;
-extern USHORT            LastAllocatedUdpPort;
 extern NDIS_SPIN_LOCK    PortListLock;
-
-extern UDP_PORT_MAP       UdpPortMapOutTable[65536];
-extern UDP_PORT_MAP       UdpPortMapInTable[65536];
 
 
 VOID

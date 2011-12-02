@@ -132,9 +132,6 @@ typedef enum _FILTER_STATUS
     FILTER_DROP_CLEAN     // Both packet and state is invalid
 } FILTER_STATUS, *PFILTER_STATUS;
 
-extern LIST_ENTRY      StateListHead;
-extern LONG            StateListLength;
-extern USHORT          LastAllocatedPort;
 extern NDIS_SPIN_LOCK  StateListLock;
 
 extern TCP_PORT_MAP    TcpPortMapOutTable[65536];

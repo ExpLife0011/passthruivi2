@@ -15,6 +15,7 @@ void PrintSetUsage()
     wcout<<endl<<"  ptctl set commands: "<<endl;
     wcout<<"    ptctl set ratio [ratio_value]"<<endl;
     wcout<<"    ptctl set offset [offset_value]"<<endl;
+    wcout<<"    ptctl set adjacent [adjacent_value]"<<endl;
     wcout<<"    ptctl set prefix [prefix/prefixlen]"<<endl;
     wcout<<"    ptctl set gateway [XX-XX-XX-XX-XX-XX]"<<endl;
 }
@@ -24,6 +25,7 @@ void PrintShowUsage()
     wcout<<endl<<"  ptctl show commands: "<<endl;
     wcout<<"    ptctl show ratio"<<endl;
     wcout<<"    ptctl show offset"<<endl;
+    wcout<<"    ptctl show adjacent"<<endl;
     wcout<<"    ptctl show prefix"<<endl;
     wcout<<"    ptctl show gateway"<<endl;
 }
@@ -223,6 +225,20 @@ int wmain(int argc, wchar_t *argv[])
             }
             wcout<<"Done."<<endl;
         }
+        else if (wcscmp(argv[2], L"adjacent") == 0)
+        {
+            // 'set offset XXX'
+            USHORT adjacent = (USHORT)(_wtoi(argv[3]));
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_SET_ADJACENT, &adjacent, sizeof(adjacent), NULL, 0, &byteReturned, NULL);
+            if (ret == FALSE)
+            {
+                wcout<<"ptctl: set adjacent failed."<<endl;
+                CloseHandle(PtHandle);
+                WSACleanup();
+                return 1;
+            }
+            wcout<<"Done."<<endl;
+        }
         else
         {
             PrintSetUsage();
@@ -332,6 +348,19 @@ int wmain(int argc, wchar_t *argv[])
                 return 1;
             }
             wcout<<offset<<endl;
+        }
+        else if (wcscmp(argv[2], L"adjacent") == 0)
+        {
+            USHORT adjacent;
+            ret = DeviceIoControl(PtHandle, IOCTL_PTUSERIO_GET_ADJACENT, NULL, 0, &adjacent, sizeof(adjacent), &byteReturned, NULL );
+            if (ret == FALSE)
+            {
+                wcout<<"ptctl: get adjacent failed."<<endl;
+                CloseHandle(PtHandle);
+                WSACleanup();
+                return 1;
+            }
+            wcout<<adjacent<<endl;
         }
         else
         {

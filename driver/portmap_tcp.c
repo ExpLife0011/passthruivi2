@@ -1283,10 +1283,12 @@ Return Value:
 {
     USHORT    ret = 0;
     SHORT     remaining;
-    LONG      max_ports = 65536 / LocalPrefixInfo.Ratio;
-    USHORT    rover;
-    USHORT    low;
-    USHORT    high;
+    LONG      max_ports = 65536 / LocalPrefixInfo.Ratio;  // Total port number is determined by ratio
+    USHORT    rover_j;
+    USHORT    rover_k;
+    USHORT    low;  // lower bound of j
+    USHORT    high; // higher bound of j
+    
     // Get original port from source port field in TCP header
     USHORT    original = ntohs(th->sport);
     
@@ -1352,34 +1354,46 @@ Return Value:
         
         if (LocalPrefixInfo.XlateMode == 1)  // 1:N port mapping
         {
-            low = (USHORT)(1024 / LocalPrefixInfo.Ratio) + 1;
-            high = max_ports - 1;
+            low = (USHORT)(1024 / LocalPrefixInfo.Ratio / LocalPrefixInfo.Adjacent) + 1;
+            high = (USHORT)(65536 / LocalPrefixInfo.Ratio / LocalPrefixInfo.Adjacent) - 1;
             remaining = (high - low) + 1;
             
             if (StateListLength != 0)
             {
-                rover = (USHORT)(LastAllocatedPort / LocalPrefixInfo.Ratio) + 1;
+                rover_j = (USHORT)(LastAllocatedPort / LocalPrefixInfo.Ratio / LocalPrefixInfo.Adjacent);
+                rover_k = (USHORT)(LastAllocatedPort % LocalPrefixInfo.Adjacent) + 1;
+                if (rover_k == LocalPrefixInfo.Adjacent)
+                {
+                    rover_j++;
+                    rover_k = 0;
+                }
             }
             else
             {
-                rover = low;
+                // No port allocated before
+                rover_j = low;
+                rover_k = 0;
             }
             
             do
             {
-                ret = rover * LocalPrefixInfo.Ratio + LocalPrefixInfo.Offset;
+                ret = (rover_j * LocalPrefixInfo.Ratio + LocalPrefixInfo.Offset) * LocalPrefixInfo.Adjacent + rover_k;
                 if (TcpPortMapInTable[ret].State == NULL)
                 {
                     // Found idle ivi port.
                     break;
                 }
-                rover++;
-                if (rover > high)
+                rover_k++;
+                if (rover_k == LocalPrefixInfo.Adjacent)
                 {
-                    // Wrap back.
-                    rover = low;
+                    rover_j++;
+                    remaining--;
+                    rover_k = 0;
+                    if (rover_j > high)
+                    {
+                        rover_j = low;
+                    }
                 }
-                remaining--;
             }
             while (remaining > 0);
             

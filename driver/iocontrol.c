@@ -138,7 +138,7 @@ Return Value:
         case IOCTL_PTUSERIO_GET_OFFSET:
             if (outputBufferLength != sizeof(LocalPrefixInfo.Offset))
             {
-                DBGPRINT(("==> ioctl: GET_RES output type invalid.\n"));
+                DBGPRINT(("==> ioctl: GET_OFFSET output type invalid.\n"));
                 NtStatus = STATUS_UNSUCCESSFUL;
             }
             else
@@ -327,6 +327,44 @@ Return Value:
             DBGPRINT(("==> ioctl: 1:N mapping disabled by user.\n"));
             ResetMapListsSafe();
             DBGPRINT(("==> Old Map List Freed.\n"));
+            break;
+            
+        case IOCTL_PTUSERIO_SET_ADJACENT:
+            if (inputBufferLength != sizeof(LocalPrefixInfo.Adjacent))
+            {
+                DBGPRINT(("==> ioctl: SET_ADJACENT input type invalid.\n"));
+                NtStatus = STATUS_UNSUCCESSFUL;
+            }
+            else
+            {
+                NdisMoveMemory(&temp1, (PVOID)ioBuffer, inputBufferLength);
+                if (temp1 > 65536 / LocalPrefixInfo.Ratio)
+                {
+                    DBGPRINT(("==> ioctl: SET_ADJACENT input %d is larger than 65536 / %d.\n", temp1, LocalPrefixInfo.Ratio));
+                    NtStatus = STATUS_UNSUCCESSFUL;
+                }
+                else
+                {
+                    LocalPrefixInfo.Adjacent = temp1;
+                    DBGPRINT(("==> ioctl: set LocalPrefixInfo.Adjacent to %d\n", LocalPrefixInfo.Adjacent));
+                    ResetMapListsSafe();
+                    DBGPRINT(("==> Old Map List Freed.\n"));
+                }
+            }
+            break;
+            
+        case IOCTL_PTUSERIO_GET_ADJACENT:
+            if (outputBufferLength != sizeof(LocalPrefixInfo.Adjacent))
+            {
+                DBGPRINT(("==> ioctl: GET_ADJACENT output type invalid.\n"));
+                NtStatus = STATUS_UNSUCCESSFUL;
+            }
+            else
+            {
+                NdisMoveMemory(ioBuffer, &(LocalPrefixInfo.Adjacent), outputBufferLength);
+                DBGPRINT(("==> ioctl: get LocalPrefixInfo.Adjacent by user.\n"));
+                BytesReturned = sizeof(LocalPrefixInfo.Adjacent);
+            }
             break;
             
         default:

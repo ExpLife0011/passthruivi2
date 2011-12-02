@@ -11,6 +11,7 @@ typedef struct _IVI_PREFIX_MIB
     USHORT     SuffixCode;    // Compressed representation of Ratio and Offset info in host byte order; 0 for 1:1 mapping
     USHORT     Ratio;         // 16 bit IVI ratio
     USHORT     Offset;        // 16 bit IVI offset
+    USHORT     Adjacent;      // 16 bit IVI continuous range
 } IVI_PREFIX_MIB, *PIVI_PREFIX_MIB;
 
 #define PREFIX_LOOKUP_MAX_RETRIES   5

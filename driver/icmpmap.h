@@ -18,17 +18,7 @@ typedef struct _ICMP_ID_MAP
     PICMP_MAP_CONTEXT    Map;
 } ICMP_ID_MAP, *PICMP_ID_MAP;
 
-
-extern LARGE_INTEGER     IcmpTimeOut;
-
-extern LIST_ENTRY        IdListHead;
-extern LONG              IdListLength;
-extern USHORT            LastAllocatedId;
 extern NDIS_SPIN_LOCK    IdListLock;
-
-extern ICMP_ID_MAP       IcmpIdMapOutTable[65536];
-extern ICMP_ID_MAP       IcmpIdMapInTable[65536];
-
 
 VOID
 InitIcmpLists(
